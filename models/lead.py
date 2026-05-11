@@ -80,6 +80,8 @@ class Lead(Base):
                                                cascade="all, delete-orphan")
     escalations: Mapped[list] = relationship("Escalation", back_populates="lead",
                                               cascade="all, delete-orphan")
+    demos: Mapped[list] = relationship("Demo", back_populates="lead",
+                                       cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Lead id={self.id} name={self.first_name} quality={self.lead_quality} score={self.lead_score}>"

@@ -25,6 +25,7 @@ from services.message_builder import (
     build_followup_1, build_followup_2, build_followup_7day,
     build_reengagement, build_subject_line,
 )
+from services.lead_scorer import apply_decay, score_to_quality
 from config import settings
 from utils.email_sender import send_email
 
@@ -278,11 +279,66 @@ def run_reengagements() -> dict:
     return {"job": "reengagements", "queued": queued, "skipped": skipped}
 
 
+
+
+def run_score_decay() -> dict:
+    """
+    Apply inactivity score decay to all active leads.
+    Called by run_all_followups() every hour.
+    Penalises leads: 31+ days = -20pts, 15-30 days = -10pts, 8-14 days = -5pts.
+    """
+    db: Session = SessionLocal()
+    now = datetime.utcnow()
+    updated = 0
+    skipped = 0
+
+    try:
+        candidates = db.query(Lead).filter(
+            Lead.opt_out.is_(False) | Lead.opt_out.is_(None),
+            Lead.status.notin_(["lost", "converted"]),
+            Lead.last_interaction_at.isnot(None),
+        ).all()
+
+        for lead in candidates:
+            days_silent = (now - lead.last_interaction_at).days
+            if days_silent < 8:
+                skipped += 1
+                continue
+
+            old_score = lead.lead_score or 0
+            new_score = apply_decay(old_score, days_silent)
+            if new_score == old_score:
+                skipped += 1
+                continue
+
+            lead.lead_score = new_score
+            lead.lead_quality = score_to_quality(new_score)
+            updated += 1
+            print(
+                f"[Scheduler] Decay Lead {lead.id} ({lead.first_name}): "
+                f"{old_score} -> {new_score} ({days_silent} days silent)"
+            )
+
+        db.commit()
+
+    finally:
+        db.close()
+
+    return {"job": "score_decay", "updated": updated, "skipped": skipped}
+
+
 def run_all_followups() -> dict:
-    """Run all follow-up and re-engagement jobs. Called by APScheduler every hour."""
+    """Run all follow-up, re-engagement, and decay jobs. Called by APScheduler every hour."""
     print(f"[Scheduler] Running follow-up jobs at {datetime.utcnow().isoformat()}")
     r1 = run_followup_1()
     r2 = run_followup_2()
     r3 = run_followup_7day()
     r4 = run_reengagements()
-    return {"followup_1": r1, "followup_2": r2, "followup_7day": r3, "reengagements": r4}
+    r5 = run_score_decay()
+    return {
+        "followup_1": r1,
+        "followup_2": r2,
+        "followup_7day": r3,
+        "reengagements": r4,
+        "score_decay": r5,
+    }

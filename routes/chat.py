@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.lead import Lead
 from models.interaction import Interaction
+from models.escalation import Escalation
+from models.demo import Demo
 from services.chat_flow import (
     get_welcome_message,
     get_next_guided_step,
@@ -34,7 +36,7 @@ from services.chat_flow import (
 from services.intent_classifier import classify_intent, should_escalate
 from services.kb_lookup import get_answer_for_intent
 from services.llm import generate_chat_response
-from services.lead_scorer import apply_engagement_delta, score_to_quality
+from services.lead_scorer import apply_engagement_delta, score_to_quality, compute_initial_score
 from services.alert_mailer import send_human_alert
 from services.demo_mailer import send_demo_confirmation
 from utils.whatsapp_sender import send_demo_whatsapp, send_alert_whatsapp
@@ -63,8 +65,25 @@ CHAT_HTML = """<!DOCTYPE html>
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
                  'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
-    background: #e8edf5;
+    /* Layered background: mesh gradient + subtle dot grid */
+    background-color: #0d1b3e;
+    background-image:
+      radial-gradient(ellipse 80% 60% at 20% 10%,  rgba(59,130,246,.22) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 80%,  rgba(16,185,129,.14) 0%, transparent 55%),
+      radial-gradient(ellipse 50% 40% at 60% 20%,  rgba(139,92,246,.10) 0%, transparent 50%),
+      radial-gradient(ellipse 70% 60% at 10% 80%,  rgba(30,58,138,.30) 0%, transparent 60%),
+      /* dot grid */
+      radial-gradient(circle, rgba(255,255,255,.055) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 28px 28px;
     display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  /* Soft vignette to frame the page */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 100% 100% at 50% 50%,
+      transparent 40%, rgba(5,10,25,.55) 100%);
   }
 
   /* ══════════════════════════════════════════════
@@ -353,7 +372,8 @@ CHAT_HTML = """<!DOCTYPE html>
   ══════════════════════════════════════════════ */
   @media (max-width: 768px) {
     html, body { height: 100%; height: -webkit-fill-available; }
-    body { background: #fff; align-items: flex-start; }
+    body { background: #1e3a8a; align-items: flex-start; }
+    body::before { display: none; }
     .page {
       width: 100%; max-width: 100%;
       height: 100vh; height: -webkit-fill-available;
@@ -765,6 +785,15 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
     if should_escalate(intent):
         lead.status = "needs_human"
         lead.assigned_to = "human_queue"
+        db.flush()  # ensure inbound.id is populated before we reference it
+        # ── Write Escalation row (P0 fix) ────────────────────────────────────
+        escalation = Escalation(
+            lead_id=lead.id,
+            interaction_id=inbound.id,
+            reason=intent.label,
+            assigned_to="human_queue",
+        )
+        db.add(escalation)
         send_human_alert(lead, intent.label, message, db)
         send_alert_whatsapp(lead, intent.label)
         db.commit()
@@ -788,6 +817,14 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
                 # "Talk to an expert" — immediate human escalation
                 lead.status = "needs_human"
                 lead.assigned_to = "human_queue"
+                db.flush()
+                escalation = Escalation(
+                    lead_id=lead.id,
+                    interaction_id=inbound.id,
+                    reason="escalation_request",
+                    assigned_to="human_queue",
+                )
+                db.add(escalation)
                 send_human_alert(lead, "escalation_request", message, db)
                 send_alert_whatsapp(lead, "escalation_request")
                 db.commit()
@@ -838,6 +875,18 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
 
             db.flush()
 
+            # ── Write Demo row (P0 fix) ───────────────────────────────────────
+            # Count existing demos to determine demo_number
+            existing_demo_count = db.query(Demo).filter(Demo.lead_id == lead.id).count()
+            demo_row = Demo(
+                lead_id=lead.id,
+                scheduled_preference=pref,
+                status="scheduled",
+                demo_number=existing_demo_count + 1,
+                booked_via="aria_chat",
+            )
+            db.add(demo_row)
+
             # Send confirmation email to lead
             send_demo_confirmation(lead, pref)
 
@@ -879,11 +928,24 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
             }
 
         # ── Normal guided step ────────────────────────────────────────────────
+        # Profile fields — these affect the 40-pt profile score component
+        PROFILE_FIELDS = {"lead_type", "team_size", "uses_software", "open_to_platform"}
+        profile_updated = any(f in PROFILE_FIELDS for f in updates)
+
         for field, value in updates.items():
             setattr(lead, field, value)
 
-        # Score update for engagement
-        new_score = apply_engagement_delta(lead.lead_score or 0, intent.label)
+        # Score update
+        if profile_updated:
+            # Recompute the full profile + form-intent score from scratch,
+            # then add whatever engagement delta has already accrued.
+            # This ensures lead_type=broker + team_size=20 is worth 15+15 pts,
+            # not still zero from when the form had lead_type=unknown.
+            engagement_portion = max(0, (lead.lead_score or 0) - compute_initial_score(lead))
+            new_base = compute_initial_score(lead)  # profile + form intent
+            new_score = min(100, new_base + engagement_portion)
+        else:
+            new_score = apply_engagement_delta(lead.lead_score or 0, intent.label)
         lead.lead_score = new_score
         lead.lead_quality = score_to_quality(new_score)
 
@@ -909,6 +971,58 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
         return {"message": response_text, "options": options, "escalated": False}
 
     # 6. Open chat — full LLM pipeline
+
+    # ── unclear retry → escalate (P2 fix) ────────────────────────────────────
+    # Architecture: "ask clarifying Q once, then escalate — never guess intent."
+    if intent.label == "unclear":
+        # Count how many consecutive unclear messages at the tail of history
+        recent_intents = (
+            db.query(Interaction.intent_label)
+            .filter(
+                Interaction.lead_id == lead.id,
+                Interaction.direction == "inbound",
+                Interaction.message_type == "chat_in",
+            )
+            .order_by(Interaction.timestamp.desc())
+            .limit(3)
+            .all()
+        )
+        consecutive_unclear = sum(
+            1 for (lbl,) in recent_intents if lbl == "unclear"
+        )
+        if consecutive_unclear >= 1:
+            # Already asked once — escalate now
+            lead.status = "needs_human"
+            lead.assigned_to = "human_queue"
+            db.flush()
+            escalation = Escalation(
+                lead_id=lead.id,
+                interaction_id=inbound.id,
+                reason="unclear_after_retry",
+                assigned_to="human_queue",
+            )
+            db.add(escalation)
+            send_human_alert(lead, "unclear", message, db)
+            send_alert_whatsapp(lead, "unclear")
+            db.commit()
+            out = (
+                "I want to make sure I give you the right answer — "
+                "let me connect you with one of our team members who can help you directly. "
+                "They'll reach out to you shortly! 😊"
+            )
+            _log_outbound(lead, out, "unclear_escalated", db)
+            return {"message": out, "options": [], "escalated": True}
+        else:
+            # First unclear — ask clarifying question
+            db.commit()
+            out = "I want to make sure I understand — could you tell me a bit more about what you're looking for?"
+            _log_outbound(lead, out, "unclear", db)
+            return {
+                "message": out,
+                "options": ["Tell me about pricing", "I want a demo", "What does BeyondSure do?"],
+                "escalated": False,
+            }
+
     new_score = apply_engagement_delta(lead.lead_score or 0, intent.label)
     lead.lead_score = new_score
     lead.lead_quality = score_to_quality(new_score)

@@ -12,6 +12,7 @@ In human_approval_mode (Phase 2):
   - Only approved messages actually get sent
 """
 
+import re
 from config import settings
 from models.lead import Lead
 
@@ -33,6 +34,72 @@ STRICT RULES — never break these:
 6. End every message with exactly one question or one clear call to action.
 7. Never mention that you are an AI unless directly asked.
 """.strip()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Post-Processor  (Architecture Layer 3 — marked CRITICAL)
+#
+# Runs on every LLM response before it leaves the system.
+# Rules:
+#   1. Block specific prices  — "₹999/month", "Rs 2000", "5000 per month" etc.
+#   2. Block date promises    — "available from June", "launching next quarter"
+#   3. Block guarantee lang   — "guaranteed", "assured returns", "100% assured"
+#   4. Block IRDAI/regulatory claims the LLM might hallucinate
+#
+# On a rule match: replace the problematic phrase with a safe fallback.
+# No match: return text unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PRICE_PATTERNS = [
+    # ₹ or Rs followed by digits (with optional commas, k, lakh, crore)
+    r"(?:₹|rs\.?\s*|inr\s*)\s*[\d,]+(?:\.\d+)?(?:\s*(?:k|lakh|crore|thousand|hundred))?(?:\s*/\s*(?:month|year|user|seat|mo|yr))?",
+    # digits followed by per month / per user / per year
+    r"\b[\d,]+\s*(?:per\s+(?:month|year|user|seat)|\/(?:month|year|mo|yr|user))\b",
+]
+_PRICE_REPLACEMENT = "pricing that fits your team size (I'll have our team share exact numbers)"
+
+_DATE_PATTERNS = [
+    r"\b(?:launching|available|rolling\s+out|releasing|going\s+live)\s+(?:in|from|by|next)\s+\w+",
+    r"\b(?:next|this)\s+(?:month|quarter|week|year)\b",
+    r"\b(?:by|from|in)\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\b",
+]
+_DATE_REPLACEMENT = "soon (our team can confirm the exact timeline)"
+
+_GUARANTEE_PATTERNS = [
+    r"\b(?:guaranteed?|guarantee|assured?\s+return|100\s*%\s*assured?|money\s*back\s*guarantee)\b",
+    r"\birda[i]?\s*(?:approved|certified|registered|compliant)\b",
+    r"\bfully\s+(?:insured|covered|protected)\b",
+]
+_GUARANTEE_REPLACEMENT = "designed to help your business"
+
+
+def post_process_response(text: str) -> str:
+    """
+    Scrub LLM output for hallucinated prices, date promises, and guarantee
+    language before the response is delivered to the lead.
+
+    Returns cleaned text. If no issues are found, returns text unchanged.
+    Logs a warning for every substitution so issues can be reviewed.
+    """
+    result = text
+    flags = re.IGNORECASE
+
+    for pattern in _PRICE_PATTERNS:
+        if re.search(pattern, result, flags):
+            print(f"[PostProcessor] PRICE pattern matched — scrubbing: {pattern[:60]}")
+            result = re.sub(pattern, _PRICE_REPLACEMENT, result, flags=flags)
+
+    for pattern in _DATE_PATTERNS:
+        if re.search(pattern, result, flags):
+            print(f"[PostProcessor] DATE pattern matched — scrubbing: {pattern[:60]}")
+            result = re.sub(pattern, _DATE_REPLACEMENT, result, flags=flags)
+
+    for pattern in _GUARANTEE_PATTERNS:
+        if re.search(pattern, result, flags):
+            print(f"[PostProcessor] GUARANTEE pattern matched — scrubbing: {pattern[:60]}")
+            result = re.sub(pattern, _GUARANTEE_REPLACEMENT, result, flags=flags)
+
+    return result
+
 
 CHAT_SYSTEM_PROMPT = """
 You are Aria, a live chat assistant for BeyondSure — a software platform that helps
@@ -126,7 +193,7 @@ def generate_draft(
             max_tokens=300,
             messages=[{"role": "system", "content": system}] + messages,
         )
-        return response.choices[0].message.content.strip()
+        return post_process_response(response.choices[0].message.content.strip())
 
     # ── Anthropic (Claude) ────────────────────────────────────────────────────
     response = client.messages.create(
@@ -135,7 +202,7 @@ def generate_draft(
         system=system,
         messages=messages,
     )
-    return response.content[0].text.strip()
+    return post_process_response(response.content[0].text.strip())
 
 
 def generate_chat_response(
@@ -174,7 +241,7 @@ def generate_chat_response(
             max_tokens=150,
             messages=[{"role": "system", "content": system}] + messages,
         )
-        return response.choices[0].message.content.strip()
+        return post_process_response(response.choices[0].message.content.strip())
 
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
@@ -182,4 +249,4 @@ def generate_chat_response(
         system=system,
         messages=messages,
     )
-    return response.content[0].text.strip()
+    return post_process_response(response.content[0].text.strip())
