@@ -105,6 +105,38 @@ def build_followup_2(lead: Lead) -> str:
     )
 
 
+def build_followup_7day(lead: Lead) -> str:
+    """
+    Final automated nudge — 7 days after follow-up 2. Warm, no pressure.
+    After this, lead goes to needs_call and human handles it.
+    """
+    greeting = _salutation(lead)
+    return (
+        f"{greeting}, one last note from us 🙏\n\n"
+        f"We know you're busy running your business — that's exactly why we built BeyondSure.\n\n"
+        f"If you ever want to see how it could save your {_lead_type_word(lead)} team time, "
+        f"just reply and we'll set something up in 15 minutes. "
+        f"Wishing you all the best until then!\n\n"
+        f"Reply STOP anytime to unsubscribe."
+    )
+
+
+def build_reengagement(lead: Lead) -> str:
+    """
+    Sent when a lead said 'maybe later' in chat and their re_engage_after
+    timestamp has passed (default 3 days). Picks up the conversation warmly.
+    """
+    greeting = _salutation(lead)
+    lt_word = _lead_type_word(lead)
+    return (
+        f"{greeting}, just checking in 😊\n\n"
+        f"You mentioned you wanted to revisit BeyondSure — many {lt_word}s "
+        f"we work with feel the same way at first, and once they see it in action "
+        f"they wonder why they waited.\n\n"
+        f"Would you like a quick 15-minute look? No pressure at all."
+    )
+
+
 def build_subject_line(lead: Lead, message_number: int = 1) -> str:
     """Generate an email subject line."""
     name = (lead.first_name or "").strip().title()

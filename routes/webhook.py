@@ -16,6 +16,7 @@ Flow for new lead:
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from database import get_db
 from models.lead import Lead
@@ -31,6 +32,27 @@ from utils.email_sender import send_email
 from config import settings
 
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
+
+
+# ── Helper: find duplicate lead by email or phone ────────────────────────────
+def _find_duplicate(email: str | None, phone: str | None, db: Session) -> Lead | None:
+    """
+    Returns an existing Lead if email or phone already exists in the DB.
+    Email match takes priority. Phone match is a fallback.
+    Returns None if no duplicate found.
+    """
+    if not email and not phone:
+        return None
+
+    filters = []
+    if email:
+        filters.append(Lead.email == email.strip().lower())
+    if phone:
+        # strip spaces/dashes for comparison
+        clean_phone = phone.strip().replace(" ", "").replace("-", "")
+        filters.append(Lead.phone == clean_phone)
+
+    return db.query(Lead).filter(or_(*filters)).first()
 
 
 # ── Helper: normalise boolean strings from form ───────────────────────────────
@@ -55,19 +77,58 @@ def _parse_lead_type(val: str | None) -> str:
     return mapping.get(v, v)
 
 
+# ── Helper: append CTA buttons to email body ─────────────────────────────────
+def _append_cta(body: str, chat_url: str, whatsapp_url: str | None) -> str:
+    """
+    Appends the two CTA links (chat + WhatsApp) to the plain-text email body.
+    The email_sender already wraps this in HTML, so the links become clickable.
+    """
+    cta = f"\n\n──────────────────────────────\n"
+    cta += f"💬  Chat with us now (instant): {chat_url}\n"
+    if whatsapp_url:
+        cta += f"📱  Continue on WhatsApp:       {whatsapp_url}\n"
+    cta += "──────────────────────────────"
+    return body + cta
+
+
 # ── POST /webhook/lead ────────────────────────────────────────────────────────
-@router.post("/lead", response_model=LeadResponse)
+@router.post("/lead")
 def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
     """
     Called by Facebook/Instagram lead ad form on every new submission.
     Creates the lead, scores it, and queues the first-touch message.
+
+    Returns a LeadResponse dict plus a `duplicate` flag:
+      - duplicate=False → fresh lead, first-touch queued
+      - duplicate=True  → lead already exists, no new record created
     """
 
-    # 1. Create Lead record
+    # 0. Deduplication check
+    existing = _find_duplicate(payload.email, payload.phone, db)
+    if existing:
+        existing.last_interaction_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        print(
+            f"[Webhook] Duplicate lead — skipped. "
+            f"Matched: {existing.first_name} | {existing.email} | {existing.phone} (id={existing.id})"
+        )
+        return {
+            "duplicate": True,
+            "id": existing.id,
+            "first_name": existing.first_name,
+            "email": existing.email,
+            "lead_quality": existing.lead_quality,
+            "lead_score": existing.lead_score,
+            "status": existing.status,
+            "message": "Duplicate lead — existing record updated (last_interaction_at refreshed).",
+        }
+
+    # 1. Create Lead record (normalise email to lowercase)
     lead = Lead(
         first_name=payload.first_name,
-        email=payload.email,
-        phone=payload.phone,
+        email=payload.email.strip().lower() if payload.email else None,
+        phone=payload.phone.strip().replace(" ", "").replace("-", "") if payload.phone else None,
         state=payload.state,
         company_name=payload.company_name,
         lead_type=_parse_lead_type(payload.types_of_business),
@@ -91,8 +152,13 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
     lead.lead_score = score
     lead.lead_quality = quality
 
-    # 3. Build first-touch message
+    # 3. Build first-touch message with chat link
+    chat_url = f"{settings.base_url}/chat/{lead.chat_token}"
+    wa_number = settings.whatsapp_business_number
+    whatsapp_url = f"https://wa.me/{wa_number}?text=Hi%2C+I%27m+interested+in+BeyondSure" if wa_number else None
+
     message_body = build_first_touch(lead)
+    message_body_with_cta = _append_cta(message_body, chat_url, whatsapp_url)
     subject = build_subject_line(lead, message_number=1)
 
     # 4. Create outbound interaction (draft or sent)
@@ -100,7 +166,7 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         lead_id=lead.id,
         direction="outbound",
         channel="email",
-        message_text=message_body,
+        message_text=message_body_with_cta,
         message_type="first_touch",
         handled_by="aria",
         send_status="pending_approval" if settings.human_approval_mode else "approved",
@@ -109,12 +175,13 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
 
     # 5. Send immediately if not in approval mode
     if not settings.human_approval_mode and lead.email:
-        sent = send_email(lead.email, subject, message_body)
+        sent = send_email(lead.email, subject, message_body_with_cta)
         if sent:
             interaction.send_status = "sent"
             lead.first_response_at = datetime.utcnow()
             lead.status = "contacted"
             lead.last_interaction_at = datetime.utcnow()
+            print(f"[Webhook] Chat link sent: {chat_url}")
 
     db.commit()
     db.refresh(lead)
@@ -124,7 +191,17 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         f"Score: {lead.lead_score} | Quality: {lead.lead_quality} | "
         f"Draft status: {interaction.send_status}"
     )
-    return lead
+    print(f"[Webhook] Chat link: {chat_url}")
+    return {
+        "duplicate": False,
+        "id": lead.id,
+        "first_name": lead.first_name,
+        "email": lead.email,
+        "lead_quality": lead.lead_quality,
+        "lead_score": lead.lead_score,
+        "status": lead.status,
+        "message": f"Lead created. Draft queued ({interaction.send_status}).",
+    }
 
 
 # ── POST /webhook/reply ───────────────────────────────────────────────────────

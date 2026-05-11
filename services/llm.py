@@ -34,6 +34,22 @@ STRICT RULES — never break these:
 7. Never mention that you are an AI unless directly asked.
 """.strip()
 
+CHAT_SYSTEM_PROMPT = """
+You are Aria, a live chat assistant for BeyondSure — a software platform that helps
+insurance agents, brokers, POSP advisors, and IMF operators manage their business.
+
+The lead is chatting with you in real-time. Be warm, concise, and human.
+
+STRICT RULES:
+1. Never state specific prices unless given in the KB context.
+2. Never confirm features not in the KB context.
+3. If unsure, say "Our team can answer that precisely — want me to connect you?"
+4. Keep responses under 60 words. Short, natural, like a WhatsApp message.
+5. Never end with a generic "Let me know if you need anything." Be specific.
+6. Never reveal you are an AI unless directly asked.
+7. Never use formal corporate language. Sound like a knowledgeable colleague.
+""".strip()
+
 
 def _get_client():
     """Lazy-initialise the right client based on LLM_PROVIDER."""
@@ -116,6 +132,53 @@ def generate_draft(
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=300,
+        system=system,
+        messages=messages,
+    )
+    return response.content[0].text.strip()
+
+
+def generate_chat_response(
+    lead: Lead,
+    intent_label: str,
+    incoming_message: str,
+    conversation_history: list[dict],
+    kb_context: str = "",
+) -> str:
+    """
+    Generate a direct chat response (no approval queue).
+    Uses a shorter, more conversational prompt than generate_draft.
+    Returns plain text — the caller attaches options if needed.
+    """
+    client, provider = _get_client()
+
+    if client is None:
+        key_name = "GROQ_API_KEY" if provider == "groq" else "ANTHROPIC_API_KEY"
+        return f"Sorry, I'm having a technical issue right now. Please try again in a moment."
+
+    context_block = f"\n\nKB CONTEXT:\n{kb_context}\n" if kb_context else ""
+    lead_context = (
+        f"\n\nLEAD:\n"
+        f"Name: {lead.first_name or 'Unknown'} | Type: {lead.lead_type or 'unknown'} | "
+        f"Team: {lead.team_size or '?'} | Quality: {lead.lead_quality} | "
+        f"Intent: {intent_label} | Uses software: {lead.uses_software} | "
+        f"Current software: {lead.current_software or '—'}"
+    )
+
+    system = CHAT_SYSTEM_PROMPT + context_block + lead_context
+    messages = conversation_history[-6:] + [{"role": "user", "content": incoming_message}]
+
+    if provider == "groq":
+        response = client.chat.completions.create(
+            model=settings.groq_model,
+            max_tokens=150,
+            messages=[{"role": "system", "content": system}] + messages,
+        )
+        return response.choices[0].message.content.strip()
+
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=150,
         system=system,
         messages=messages,
     )

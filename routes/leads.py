@@ -9,6 +9,7 @@ Endpoints:
 """
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -90,6 +91,69 @@ def list_leads(
     ]
 
 
+class NotesRequest(BaseModel):
+    notes: str
+
+class StatusRequest(BaseModel):
+    status: str
+    reason: str | None = None
+
+
+@router.post("/{lead_id}/priority")
+def toggle_priority(lead_id: int, db: Session = Depends(get_db)):
+    """
+    Manually toggle human_priority flag on a lead.
+    When on, ARIA will alert the team on any positive signal from this lead.
+    """
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return {"error": "Lead not found"}
+    lead.human_priority = not lead.human_priority
+    db.commit()
+    return {
+        "id": lead.id,
+        "human_priority": lead.human_priority,
+        "message": f"Priority {'enabled 🚩' if lead.human_priority else 'cleared'} for {lead.first_name}",
+    }
+
+
+@router.post("/{lead_id}/notes")
+def set_notes(lead_id: int, body: NotesRequest, db: Session = Depends(get_db)):
+    """
+    Add or replace human notes on a lead.
+    Notes are shown in the alert email and in the lead detail view.
+    """
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return {"error": "Lead not found"}
+    lead.human_notes = body.notes.strip()
+    db.commit()
+    return {"id": lead.id, "human_notes": lead.human_notes}
+
+
+@router.patch("/{lead_id}/status")
+def override_status(lead_id: int, body: StatusRequest, db: Session = Depends(get_db)):
+    """
+    Manually override a lead's status. Use when a team member has context
+    that ARIA doesn't — e.g. "I spoke to this person, marking as contacted."
+    """
+    valid = {"new", "engaged", "interested", "needs_human", "contacted",
+             "demo_scheduled", "demo_done", "converted", "lost", "invalid"}
+    if body.status not in valid:
+        return {"error": f"Invalid status. Valid options: {sorted(valid)}"}
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return {"error": "Lead not found"}
+    old_status = lead.status
+    lead.status = body.status
+    if body.reason and lead.human_notes:
+        lead.human_notes = f"{lead.human_notes}\n[Status changed {old_status}→{body.status}: {body.reason}]"
+    elif body.reason:
+        lead.human_notes = f"[Status changed {old_status}→{body.status}: {body.reason}]"
+    db.commit()
+    return {"id": lead.id, "status": lead.status, "previous": old_status}
+
+
 @router.get("/{lead_id}")
 def get_lead(lead_id: int, db: Session = Depends(get_db)):
     """Get a single lead with full interaction history."""
@@ -119,6 +183,12 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
             "quality": lead.lead_quality,
             "status": lead.status,
             "opt_out": lead.opt_out,
+            "human_priority": lead.human_priority,
+            "human_notes": lead.human_notes,
+            "current_software": lead.current_software,
+            "chat_url": f"/chat/{lead.chat_token}" if lead.chat_token else None,
+            "chat_opened_at": lead.chat_opened_at,
+            "alert_sent_at": lead.alert_sent_at,
             "created_at": lead.created_at,
             "first_response_at": lead.first_response_at,
         },

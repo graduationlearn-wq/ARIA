@@ -1,5 +1,6 @@
+import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, Float, func
+from sqlalchemy import String, Integer, Boolean, DateTime, Float, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -50,6 +51,29 @@ class Lead(Base):
     first_human_call_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     converted_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     last_interaction_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    # ── Chat ─────────────────────────────────────────────────────────────────
+    # Unique token embedded in the chat link sent to lead — their "key" to the room
+    chat_token: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    chat_opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    alert_sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    # ── Human override ────────────────────────────────────────────────────────
+    # Team members can manually boost a lead and leave notes
+    human_priority: Mapped[bool] = mapped_column(Boolean, default=False)
+    human_notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # ── Extended profile (populated via chat flow) ────────────────────────────
+    current_software: Mapped[str] = mapped_column(String(200), nullable=True)
+    company_website: Mapped[str] = mapped_column(String(300), nullable=True)
+    demo_preference: Mapped[str] = mapped_column(String(200), nullable=True)  # preferred call time
+
+    # ── Re-engagement (set when lead says "maybe later") ──────────────────────
+    # Scheduler checks this: if re_engage_after <= now → send re-engagement nudge
+    re_engage_after: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────────
     interactions: Mapped[list] = relationship("Interaction", back_populates="lead",

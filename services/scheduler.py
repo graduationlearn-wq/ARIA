@@ -21,14 +21,18 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models.interaction import Interaction
 from models.lead import Lead
-from services.message_builder import build_followup_1, build_followup_2, build_subject_line
+from services.message_builder import (
+    build_followup_1, build_followup_2, build_followup_7day,
+    build_reengagement, build_subject_line,
+)
 from config import settings
 from utils.email_sender import send_email
 
 
 # ── Tuneable windows ──────────────────────────────────────────────────────────
-FOLLOWUP_1_AFTER_HOURS = 24
-FOLLOWUP_2_AFTER_HOURS = 72   # measured from when followup_1 was queued
+FOLLOWUP_1_AFTER_HOURS  = 24
+FOLLOWUP_2_AFTER_HOURS  = 72    # measured from when followup_1 was queued
+FOLLOWUP_7DAY_AFTER_DAYS = 7    # measured from when followup_2 was queued
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -177,9 +181,108 @@ def run_followup_2() -> dict:
     return {"job": "followup_2", "queued": queued, "skipped": skipped}
 
 
+def run_followup_7day() -> dict:
+    """
+    Queue a final 7-day nudge for leads where:
+      - Follow-up 2 was sent > 7 days ago
+      - No inbound reply yet
+      - No followup_7day already exists
+    After this, lead status → needs_call (human must reach out personally).
+    """
+    db: Session = SessionLocal()
+    cutoff = datetime.utcnow() - timedelta(days=FOLLOWUP_7DAY_AFTER_DAYS)
+    queued = 0
+    skipped = 0
+
+    try:
+        candidates = db.query(Lead).filter(
+            Lead.opt_out.is_(False) | Lead.opt_out.is_(None),
+            Lead.status.notin_(["escalated", "lost", "converted", "contacted"]),
+        ).all()
+
+        for lead in candidates:
+            if _has_inbound(lead.id, db):
+                skipped += 1
+                continue
+            if _has_message_type(lead.id, "followup_7day", db):
+                skipped += 1
+                continue
+
+            fu2 = db.query(Interaction).filter(
+                Interaction.lead_id == lead.id,
+                Interaction.message_type == "followup_2",
+            ).first()
+
+            if not fu2 or fu2.timestamp > cutoff:
+                skipped += 1
+                continue
+
+            message = build_followup_7day(lead)
+            status = _queue_or_send(lead, message, "followup_7day", 4, db)
+            lead.status = "needs_call"
+            db.commit()
+
+            queued += 1
+            print(f"[Scheduler] 7-day nudge → Lead {lead.id} ({lead.first_name}) | {status}")
+
+    finally:
+        db.close()
+
+    return {"job": "followup_7day", "queued": queued, "skipped": skipped}
+
+
+def run_reengagements() -> dict:
+    """
+    Re-engage leads who said 'maybe later' in chat.
+    Fires when lead.re_engage_after <= now and lead hasn't replied or opted out.
+    Resumes the conversation by sending the re-engagement message.
+    """
+    db: Session = SessionLocal()
+    now = datetime.utcnow()
+    queued = 0
+    skipped = 0
+
+    try:
+        candidates = db.query(Lead).filter(
+            Lead.re_engage_after.isnot(None),
+            Lead.re_engage_after <= now,
+            Lead.opt_out.is_(False) | Lead.opt_out.is_(None),
+            Lead.status.notin_(["lost", "converted", "contacted", "needs_human"]),
+        ).all()
+
+        for lead in candidates:
+            if _has_inbound(lead.id, db):
+                # They came back on their own — clear the re-engage timer
+                lead.re_engage_after = None
+                db.commit()
+                skipped += 1
+                continue
+
+            if _has_message_type(lead.id, "reengagement", db):
+                skipped += 1
+                continue
+
+            message = build_reengagement(lead)
+            status = _queue_or_send(lead, message, "reengagement", 2, db)
+
+            # Clear the timer so we don't re-send
+            lead.re_engage_after = None
+            db.commit()
+
+            queued += 1
+            print(f"[Scheduler] Re-engagement → Lead {lead.id} ({lead.first_name}) | {status}")
+
+    finally:
+        db.close()
+
+    return {"job": "reengagements", "queued": queued, "skipped": skipped}
+
+
 def run_all_followups() -> dict:
-    """Run both follow-up jobs. Called by APScheduler every hour."""
+    """Run all follow-up and re-engagement jobs. Called by APScheduler every hour."""
     print(f"[Scheduler] Running follow-up jobs at {datetime.utcnow().isoformat()}")
     r1 = run_followup_1()
     r2 = run_followup_2()
-    return {"followup_1": r1, "followup_2": r2}
+    r3 = run_followup_7day()
+    r4 = run_reengagements()
+    return {"followup_1": r1, "followup_2": r2, "followup_7day": r3, "reengagements": r4}

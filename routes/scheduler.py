@@ -13,7 +13,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel, EmailStr
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from services.scheduler import run_all_followups, run_followup_1, run_followup_2
+from services.scheduler import (
+    run_all_followups, run_followup_1, run_followup_2,
+    run_followup_7day, run_reengagements,
+)
 from utils.email_sender import send_email
 from config import settings
 
@@ -46,6 +49,20 @@ def trigger_followup_1():
 def trigger_followup_2():
     """Manually trigger follow-up 2 only."""
     result = run_followup_2()
+    return {"status": "completed", "result": result}
+
+
+@router.post("/run/followup-7day")
+def trigger_followup_7day():
+    """Manually trigger the 7-day final nudge."""
+    result = run_followup_7day()
+    return {"status": "completed", "result": result}
+
+
+@router.post("/run/reengagements")
+def trigger_reengagements():
+    """Manually trigger re-engagement messages for 'maybe later' leads."""
+    result = run_reengagements()
     return {"status": "completed", "result": result}
 
 

@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     human_approval_mode: bool = True   # Phase 2: drafts need human approval
     debug: bool = True
 
+    # Chat + alert config
+    base_url: str = "http://localhost:8000"           # used to build chat links in emails
+    alert_email: str = ""                             # team inbox for hot-lead alerts
+    whatsapp_business_number: str = ""                # team's WA number for internal alerts (e.g. "919304712348")
+    google_meet_link: str = ""                        # Google Meet link sent to leads on demo booking
+
+    # WhatsApp Cloud API (Meta)
+    # Get from: developers.facebook.com → your app → WhatsApp → API Setup
+    whatsapp_api_token: str = ""                      # Bearer token (use permanent System User token for prod)
+    whatsapp_phone_number_id: str = ""                # Phone Number ID (NOT the actual phone number)
+
     class Config:
         env_file = ".env"
 
