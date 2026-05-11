@@ -39,6 +39,10 @@ class Interaction(Base):
     # Notes from human reviewer (used during approval)
     reviewer_notes: Mapped[str] = mapped_column(Text, nullable=True)
 
+    # first_touch | followup_1 | followup_2 | reply_draft
+    # Tracks which step in the outbound sequence this message is
+    message_type: Mapped[str] = mapped_column(String(30), nullable=True)
+
     # ── Relationship ──────────────────────────────────────────────────────────
     lead: Mapped["Lead"] = relationship("Lead", back_populates="interactions")  # noqa: F821
 

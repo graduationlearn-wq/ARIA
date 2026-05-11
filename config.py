@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     email_from_name: str = "BeyondSure"
+    # The verified sender address (for SendGrid this differs from smtp_user="apikey")
+    email_from_address: str = ""
     database_url: str = "sqlite:///./aria.db"
     human_approval_mode: bool = True   # Phase 2: drafts need human approval
     debug: bool = True

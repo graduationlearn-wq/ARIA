@@ -101,6 +101,7 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         direction="outbound",
         channel="email",
         message_text=message_body,
+        message_type="first_touch",
         handled_by="aria",
         send_status="pending_approval" if settings.human_approval_mode else "approved",
     )

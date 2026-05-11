@@ -1,10 +1,17 @@
 """
 Email Sender — uses Python's built-in smtplib (no extra packages needed).
 
-For Gmail:
-  1. Go to myaccount.google.com → Security → 2-Step Verification → App Passwords
-  2. Generate a password for "Mail"
-  3. Put that password in SMTP_PASSWORD in your .env file
+For SendGrid (recommended):
+  SMTP_HOST=smtp.sendgrid.net
+  SMTP_PORT=587
+  SMTP_USER=apikey          ← literally the word "apikey"
+  SMTP_PASSWORD=SG.xxxxx    ← your SendGrid API key
+
+For Gmail (dev/testing):
+  SMTP_HOST=smtp.gmail.com
+  SMTP_PORT=587
+  SMTP_USER=your@gmail.com
+  SMTP_PASSWORD=xxxx xxxx xxxx xxxx   ← App Password (not your real password)
 """
 
 import smtplib
@@ -24,9 +31,12 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
         print(f"[Email] Body:\n{body}")
         return False
 
+    # Use explicit from address if set (required for SendGrid), else fall back to smtp_user
+    from_address = settings.email_from_address or settings.smtp_user
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"{settings.email_from_name} <{settings.smtp_user}>"
+    msg["From"] = f"{settings.email_from_name} <{from_address}>"
     msg["To"] = to_address
 
     # Plain text version
@@ -40,7 +50,7 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
         <br><br>
         <p style="font-size:11px;color:#aaa;">
             You're receiving this because you filled out a form expressing interest in BeyondSure.<br>
-            <a href="mailto:{settings.smtp_user}?subject=Unsubscribe">Unsubscribe</a>
+            <a href="mailto:{from_address}?subject=Unsubscribe">Unsubscribe</a>
         </p>
     </body></html>
     """
