@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import init_db
-from routes import webhook, leads, approval
+from routes import webhook, leads, approval, dashboard
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
@@ -47,6 +47,7 @@ def on_startup():
     set_scheduler(_scheduler)
     print("=" * 55)
     print("  ARIA is running.")
+    print("  Dashboard:      http://localhost:8000/dashboard")
     print("  Docs:           http://localhost:8000/docs")
     print("  Approval queue: http://localhost:8000/approval/queue")
     print("  Scheduler:      http://localhost:8000/scheduler/status")
@@ -65,6 +66,7 @@ app.include_router(webhook.router)
 app.include_router(leads.router)
 app.include_router(approval.router)
 app.include_router(scheduler_route.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/", tags=["Health"])
