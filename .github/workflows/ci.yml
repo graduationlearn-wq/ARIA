@@ -52,14 +52,8 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests with coverage
-        run: |
-          pytest \
-            --tb=short \
-            -v \
-            --cov=. \
-            --cov-omit="tests/*,*/__pycache__/*" \
-            --cov-report=term-missing \
-            --cov-fail-under=60
+        # omit/fail-under/report settings are in setup.cfg [coverage:*]
+        run: pytest --cov=. --cov-report=term-missing
 
       - name: Clean up test DB
         if: always()
