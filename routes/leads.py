@@ -77,13 +77,17 @@ def list_leads(
             "id": l.id,
             "name": l.first_name,
             "email": l.email,
+            "phone": l.phone,
             "company": l.company_name,
             "state": l.state,
             "type": l.lead_type,
+            "team_size": l.team_size,
             "score": l.lead_score,
             "quality": l.lead_quality,
             "status": l.status,
             "current_intent": l.current_intent,
+            "willing_for_demo": l.willing_for_demo,
+            "human_priority": l.human_priority,
             "created_at": l.created_at,
             "last_interaction_at": l.last_interaction_at,
         }
@@ -170,27 +174,44 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
 
     return {
         "lead": {
+            # ── Identity ──────────────────────────────────────────────────────
             "id": lead.id,
             "name": lead.first_name,
             "email": lead.email,
             "phone": lead.phone,
             "company": lead.company_name,
             "state": lead.state,
+            # ── Profile ───────────────────────────────────────────────────────
             "type": lead.lead_type,
             "team_size": lead.team_size,
             "source": lead.source_platform,
+            "channel": lead.channel,
+            "uses_software": lead.uses_software,
+            "current_software": lead.current_software,
+            "open_to_platform": lead.open_to_platform,
+            "company_website": lead.company_website,
+            # ── Scoring & status ──────────────────────────────────────────────
             "score": lead.lead_score,
             "quality": lead.lead_quality,
             "status": lead.status,
+            "current_intent": lead.current_intent,
+            # ── Demo interest ─────────────────────────────────────────────────
+            "willing_for_demo": lead.willing_for_demo,
+            "demo_preference": lead.demo_preference,
+            # ── Compliance & overrides ────────────────────────────────────────
             "opt_out": lead.opt_out,
             "human_priority": lead.human_priority,
             "human_notes": lead.human_notes,
-            "current_software": lead.current_software,
+            # ── Chat ─────────────────────────────────────────────────────────
             "chat_url": f"/chat/{lead.chat_token}" if lead.chat_token else None,
             "chat_opened_at": lead.chat_opened_at,
             "alert_sent_at": lead.alert_sent_at,
+            # ── Re-engagement ─────────────────────────────────────────────────
+            "re_engage_after": lead.re_engage_after,
+            # ── Timestamps ───────────────────────────────────────────────────
             "created_at": lead.created_at,
             "first_response_at": lead.first_response_at,
+            "last_interaction_at": lead.last_interaction_at,
         },
         "interactions": [
             {

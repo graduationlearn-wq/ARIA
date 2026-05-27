@@ -144,5 +144,6 @@ def build_subject_line(lead: Lead, message_number: int = 1) -> str:
         1: f"Manage your insurance business better, {name}" if name else "Manage your insurance business better",
         2: "Just checking in — BeyondSure",
         3: "Last message from BeyondSure",
+        4: f"One last note, {name} — BeyondSure" if name else "One last note — BeyondSure",
     }
     return subjects.get(message_number, "BeyondSure — Insurance Platform")

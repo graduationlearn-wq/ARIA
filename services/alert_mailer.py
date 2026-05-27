@@ -9,7 +9,9 @@ pick up the phone with confidence: who they are, what they want, their score,
 the conversation so far, and a recommended action.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
 from sqlalchemy.orm import Session
 
 from models.lead import Lead
@@ -95,7 +97,7 @@ def build_alert_email_body(lead: Lead, intent: str, last_message: str, db: Sessi
     body = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ARIA LEAD ALERT — BeyondSure
-  {datetime.utcnow().strftime('%d %b %Y, %H:%M UTC')}
+  {datetime.now(IST).strftime('%d %b %Y, %H:%M IST')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WHO

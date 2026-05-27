@@ -15,7 +15,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from services.scheduler import (
     run_all_followups, run_followup_1, run_followup_2,
-    run_followup_7day, run_reengagements,
+    run_followup_7day, run_reengagements, run_score_decay,
+    run_pending_approved_sends,
 )
 from utils.email_sender import send_email
 from config import settings
@@ -63,6 +64,23 @@ def trigger_followup_7day():
 def trigger_reengagements():
     """Manually trigger re-engagement messages for 'maybe later' leads."""
     result = run_reengagements()
+    return {"status": "completed", "result": result}
+
+
+@router.post("/run/score-decay")
+def trigger_score_decay():
+    """Manually trigger score decay for all inactive leads."""
+    result = run_score_decay()
+    return {"status": "completed", "result": result}
+
+
+@router.post("/run/pending-sends")
+def trigger_pending_sends():
+    """
+    Manually flush any approved-but-unsent messages.
+    Useful for testing the IST send-window logic or draining a backlog.
+    """
+    result = run_pending_approved_sends()
     return {"status": "completed", "result": result}
 
 

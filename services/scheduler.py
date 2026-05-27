@@ -14,7 +14,7 @@ Rules:
   - Don't double-queue: skip if a follow-up draft already exists in pending_approval
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,17 @@ from utils.email_sender import send_email
 FOLLOWUP_1_AFTER_HOURS  = 24
 FOLLOWUP_2_AFTER_HOURS  = 72    # measured from when followup_1 was queued
 FOLLOWUP_7DAY_AFTER_DAYS = 7    # measured from when followup_2 was queued
+
+# ── IST send-hour window ──────────────────────────────────────────────────────
+_IST = timezone(timedelta(hours=5, minutes=30))
+_SEND_HOUR_START = 9    # 9:00 AM IST — earliest we contact a lead
+_SEND_HOUR_END   = 21   # 9:00 PM IST — latest we contact a lead
+
+
+def _is_send_hour_ist() -> bool:
+    """Return True if the current IST time is within the allowed send window (9am–9pm)."""
+    hour = datetime.now(_IST).hour
+    return _SEND_HOUR_START <= hour < _SEND_HOUR_END
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -59,7 +70,9 @@ def _queue_or_send(lead: Lead, message_text: str, message_type: str,
     """
     Create an outbound interaction.
     If human_approval_mode → pending_approval (goes to approval queue).
-    Else → send immediately.
+    If auto-send mode AND within IST send window (9am–9pm) → send immediately.
+    If auto-send mode AND outside IST send window → mark "approved", picked up
+    by run_pending_approved_sends() on the next in-window hourly run.
     """
     subject = build_subject_line(lead, message_number)
 
@@ -75,10 +88,17 @@ def _queue_or_send(lead: Lead, message_text: str, message_type: str,
     db.add(interaction)
 
     if not settings.human_approval_mode and lead.email:
-        sent = send_email(lead.email, subject, message_text)
-        if sent:
-            interaction.send_status = "sent"
-            lead.last_interaction_at = datetime.utcnow()
+        if _is_send_hour_ist():
+            sent = send_email(lead.email, subject, message_text)
+            if sent:
+                interaction.send_status = "sent"
+                lead.last_interaction_at = datetime.utcnow()
+        else:
+            # Outside 9am–9pm IST — stays "approved", sent on the next in-window run
+            print(
+                f"[Scheduler] Outside send window (IST) — holding until 9am: "
+                f"Lead {lead.id} ({lead.first_name})"
+            )
 
     db.commit()
     return interaction.send_status
@@ -327,18 +347,74 @@ def run_score_decay() -> dict:
     return {"job": "score_decay", "updated": updated, "skipped": skipped}
 
 
+def run_pending_approved_sends() -> dict:
+    """
+    Send any outbound interactions that are "approved" but not yet sent.
+
+    These are messages that were queued outside the IST send window (9am–9pm)
+    in auto-send mode. This job runs every hour alongside the other jobs;
+    when the send window opens, it drains the approved queue.
+
+    In human_approval_mode this job is a no-op — humans send via the approval UI.
+    """
+    if settings.human_approval_mode:
+        return {"job": "pending_approved_sends", "skipped": "human_approval_mode is on"}
+
+    if not _is_send_hour_ist():
+        return {"job": "pending_approved_sends", "skipped": "outside IST send window"}
+
+    db: Session = SessionLocal()
+    sent_count = 0
+    failed_count = 0
+
+    try:
+        pending = (
+            db.query(Interaction)
+            .filter(
+                Interaction.direction == "outbound",
+                Interaction.send_status == "approved",
+                Interaction.channel == "email",
+            )
+            .all()
+        )
+
+        for interaction in pending:
+            lead = db.query(Lead).filter(Lead.id == interaction.lead_id).first()
+            if not lead or not lead.email or lead.opt_out:
+                continue
+
+            subject = build_subject_line(lead, 2)  # safe default subject
+            sent = send_email(lead.email, subject, interaction.message_text)
+            if sent:
+                interaction.send_status = "sent"
+                lead.last_interaction_at = datetime.utcnow()
+                sent_count += 1
+                print(f"[Scheduler] Pending send delivered → Lead {lead.id} ({lead.first_name})")
+            else:
+                failed_count += 1
+
+        db.commit()
+
+    finally:
+        db.close()
+
+    return {"job": "pending_approved_sends", "sent": sent_count, "failed": failed_count}
+
+
 def run_all_followups() -> dict:
     """Run all follow-up, re-engagement, and decay jobs. Called by APScheduler every hour."""
-    print(f"[Scheduler] Running follow-up jobs at {datetime.utcnow().isoformat()}")
+    print(f"[Scheduler] Running follow-up jobs at {datetime.now(_IST).strftime('%d %b %Y, %H:%M IST')}")
     r1 = run_followup_1()
     r2 = run_followup_2()
     r3 = run_followup_7day()
     r4 = run_reengagements()
     r5 = run_score_decay()
+    r6 = run_pending_approved_sends()
     return {
         "followup_1": r1,
         "followup_2": r2,
         "followup_7day": r3,
         "reengagements": r4,
         "score_decay": r5,
+        "pending_approved_sends": r6,
     }

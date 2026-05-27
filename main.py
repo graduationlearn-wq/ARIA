@@ -18,6 +18,7 @@ from routes import webhook, leads, approval, dashboard, chat
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
+from services.kb_seeder import seed_kb
 
 app = FastAPI(
     title="ARIA — BeyondSure Lead Engine",
@@ -41,8 +42,9 @@ _scheduler.add_job(
 
 @app.on_event("startup")
 def on_startup():
-    """Create all DB tables on first run, then start the background scheduler."""
+    """Create all DB tables on first run, seed KB, then start the background scheduler."""
     init_db()
+    seed_kb()
     _scheduler.start()
     set_scheduler(_scheduler)
     print("=" * 55)

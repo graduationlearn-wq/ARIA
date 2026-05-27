@@ -6,6 +6,7 @@
 *.db
 *.sqlite
 *.sqlite3
+ci_test.db
 
 # Python
 __pycache__/

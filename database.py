@@ -25,5 +25,5 @@ def get_db():
 
 def init_db():
     """Create all tables. Called once on startup."""
-    from models import lead, interaction, escalation, knowledge_base  # noqa: F401
+    from models import lead, interaction, escalation, knowledge_base, demo  # noqa: F401
     Base.metadata.create_all(bind=engine)

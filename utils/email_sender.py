@@ -61,7 +61,9 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
             server.ehlo()
             server.starttls()
             server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(settings.smtp_user, to_address, msg.as_string())
+            # Use from_address (not smtp_user) as envelope sender — critical for SendGrid
+            # where smtp_user="apikey" but the verified sender is email_from_address.
+            server.sendmail(from_address, to_address, msg.as_string())
         print(f"[Email] Sent to {to_address} — Subject: {subject}")
         return True
     except Exception as e:

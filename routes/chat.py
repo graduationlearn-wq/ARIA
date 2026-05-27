@@ -40,7 +40,6 @@ from services.lead_scorer import apply_engagement_delta, score_to_quality, compu
 from services.alert_mailer import send_human_alert
 from services.demo_mailer import send_demo_confirmation
 from utils.whatsapp_sender import send_demo_whatsapp, send_alert_whatsapp
-from config import settings
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -901,24 +900,13 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
             db.commit()
 
             # Build in-chat confirmation message
-            meet_link = settings.google_meet_link
-            if meet_link:
-                out = (
-                    f"✅ All set — your demo is confirmed!\n\n"
-                    f"📅  Time: {pref}\n"
-                    f"📞  Our team will call you directly — you don't need to do anything, "
-                    f"just be available at your number.\n\n"
-                    f"🔗  Google Meet link (for reference):\n{meet_link}\n\n"
-                    f"We've also sent this to your email and WhatsApp. Talk soon! 😊"
-                )
-            else:
-                out = (
-                    f"✅ All set — your demo is confirmed!\n\n"
-                    f"📅  Time: {pref}\n"
-                    f"📞  Our team will call you directly — you don't need to do anything, "
-                    f"just be available at your number.\n\n"
-                    f"We've sent a confirmation to your email. Talk soon! 😊"
-                )
+            out = (
+                f"✅ All set — your demo is confirmed!\n\n"
+                f"📅  Time: {pref}\n"
+                f"📞  Our team will call you directly — you don't need to do anything, "
+                f"just be available at your number.\n\n"
+                f"We've sent a confirmation to your email. Talk soon! 😊"
+            )
 
             _log_outbound(lead, out, "demo_confirmed", db)
             return {

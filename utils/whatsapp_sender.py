@@ -97,28 +97,15 @@ def send_demo_whatsapp(lead, preferred_time: str) -> bool:
 
     name = (lead.first_name or "there").strip()
     phone_display = lead.phone or "your registered number"
-    meet_link = settings.google_meet_link
 
-    if meet_link:
-        body = (
-            f"Hi {name}! 👋\n\n"
-            f"Your *BeyondSure demo is confirmed!* 🎉\n\n"
-            f"📅 *Time:* {preferred_time}\n"
-            f"📞 *How it works:* Our team will call you directly on {phone_display} — "
-            f"you don't need to do anything.\n\n"
-            f"🔗 *Google Meet link (for reference):*\n{meet_link}\n\n"
-            f"We'll also send this to your email. Talk soon! 😊\n"
-            f"— The BeyondSure Team"
-        )
-    else:
-        body = (
-            f"Hi {name}! 👋\n\n"
-            f"Your *BeyondSure demo is confirmed!* 🎉\n\n"
-            f"📅 *Time:* {preferred_time}\n"
-            f"📞 *How it works:* Our team will call you directly on {phone_display}.\n\n"
-            f"No need to do anything — just be available when we call! 😊\n"
-            f"— The BeyondSure Team"
-        )
+    body = (
+        f"Hi {name}! 👋\n\n"
+        f"Your *BeyondSure demo is confirmed!* 🎉\n\n"
+        f"📅 *Time:* {preferred_time}\n"
+        f"📞 *How it works:* Our team will call you directly on {phone_display}.\n\n"
+        f"No need to do anything — just be available when we call! 😊\n"
+        f"— The BeyondSure Team"
+    )
 
     return send_whatsapp_message(lead.phone, body)
 

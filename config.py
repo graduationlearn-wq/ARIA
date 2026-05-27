@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # Get from: developers.facebook.com → your app → WhatsApp → API Setup
     whatsapp_api_token: str = ""                      # Bearer token (use permanent System User token for prod)
     whatsapp_phone_number_id: str = ""                # Phone Number ID (NOT the actual phone number)
+    whatsapp_business_account_id: str = ""            # WhatsApp Business Account ID (from API Setup page)
+    whatsapp_webhook_verify_token: str = "aria_beyondsure_2024"  # match this in Meta dashboard webhook config
+
+    # Demo booking
+    # Removed: google_meet_link — Meet links are shared by the team manually during the call,
+    # not included in automated messages to avoid confusion (phone call vs video call).
 
     class Config:
         env_file = ".env"

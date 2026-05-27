@@ -1,66 +1,13 @@
 """
 Tests for /webhook and /approval routes.
 
-Uses an in-memory SQLite DB per test session and patches send_email so no
-real SMTP calls are made.  human_approval_mode is forced True so every
-first-touch message lands in the queue rather than being sent.
+Fixtures (db, client, create_tables) and payloads (BROKER_PAYLOAD etc.)
+come from conftest.py — no setup needed here.
 """
 
-import pytest
 from unittest.mock import patch
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from database import Base, get_db
-from main import app
-
-# ── Test DB setup ─────────────────────────────────────────────────────────────
-
-TEST_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def create_tables():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture()
-def db():
-    """Fresh DB transaction rolled back after each test."""
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    yield session
-    session.close()
-    transaction.rollback()
-    connection.close()
-
-
-@pytest.fixture()
-def client(db):
-    def override_get_db():
-        try:
-            yield db
-        finally:
-            pass
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-# ── Reusable payloads ─────────────────────────────────────────────────────────
-
+# Payloads duplicated locally so this file stays self-documenting
 BROKER_PAYLOAD = {
     "first_name": "Rajesh",
     "email": "rajesh@brokerhouse.in",

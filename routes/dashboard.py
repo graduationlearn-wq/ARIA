@@ -133,7 +133,7 @@ select:focus,input:focus{outline:none;border-color:#5DCAA5}
     </div>
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Total Leads</div><div class="kpi-value" id="k-total">—</div><div class="kpi-delta">all time</div></div>
-      <div class="kpi"><div class="kpi-label">Hot Leads</div><div class="kpi-value hot" id="k-hot">—</div><div class="kpi-delta">score ≥ 65</div></div>
+      <div class="kpi"><div class="kpi-label">Hot Leads</div><div class="kpi-value hot" id="k-hot">—</div><div class="kpi-delta">score ≥ 70</div></div>
       <div class="kpi"><div class="kpi-label">Pending Approval</div><div class="kpi-value amber" id="k-pending">—</div><div class="kpi-delta">drafts waiting</div></div>
       <div class="kpi"><div class="kpi-label">Avg First Response</div><div class="kpi-value green" id="k-response">—</div><div class="kpi-delta" id="k-response-sub">vs 202 days before</div></div>
     </div>
@@ -177,9 +177,15 @@ select:focus,input:focus{outline:none;border-color:#5DCAA5}
         <select id="filter-s" onchange="loadLeads()">
           <option value="">All status</option>
           <option value="new">New</option>
+          <option value="engaged">Engaged</option>
+          <option value="interested">Interested</option>
           <option value="contacted">Contacted</option>
-          <option value="escalated">Escalated</option>
+          <option value="needs_human">Needs human</option>
           <option value="needs_call">Needs call</option>
+          <option value="demo_scheduled">Demo scheduled</option>
+          <option value="demo_done">Demo done</option>
+          <option value="converted">Converted</option>
+          <option value="escalated">Escalated</option>
           <option value="lost">Lost</option>
         </select>
       </div>

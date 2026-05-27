@@ -13,7 +13,7 @@ This is a lead-facing email (not internal like alert_mailer).
 
 from models.lead import Lead
 from utils.email_sender import send_email
-from config import settings
+from config import settings  # used for base_url (chat link in footer)
 
 
 def send_demo_confirmation(lead: Lead, preferred_time: str) -> bool:
@@ -27,7 +27,6 @@ def send_demo_confirmation(lead: Lead, preferred_time: str) -> bool:
 
     name = (lead.first_name or "there").strip()
     phone = lead.phone or "your registered number"
-    meet_link = settings.google_meet_link
 
     subject = f"Your BeyondSure demo is confirmed! 🎉"
 
@@ -43,9 +42,6 @@ Great news — your BeyondSure demo is all set! 🙌
 📞  How it works:     Our team will call you directly on {phone}
 
 You don't need to do anything — just be available when we call!
-
-{"🔗  Google Meet link: " + meet_link if meet_link else ""}
-{"     (Our team will share this when they call you)" if meet_link else ""}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   WHAT TO EXPECT
