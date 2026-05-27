@@ -8,3 +8,4 @@ anthropic==0.25.8
 groq>=0.13.0
 python-multipart==0.0.9
 apscheduler==3.10.4
+requests>=2.31.0
