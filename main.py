@@ -10,6 +10,8 @@ Then open:
     http://localhost:8000/       ← health check
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -19,15 +21,6 @@ from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
 from services.kb_seeder import seed_kb
-
-app = FastAPI(
-    title="ARIA — BeyondSure Lead Engine",
-    description=(
-        "AI-powered lead engagement system. "
-        "Receives leads → scores them → generates responses → human approves → sends."
-    ),
-    version="0.1.0 — Phase 2 Beta",
-)
 
 # ── Background scheduler (follow-up jobs) ────────────────────────────────────
 _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
@@ -40,9 +33,9 @@ _scheduler.add_job(
 )
 
 
-@app.on_event("startup")
-def on_startup():
-    """Create all DB tables on first run, seed KB, then start the background scheduler."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: init DB, seed KB, start scheduler.  Shutdown: stop scheduler."""
     init_db()
     seed_kb()
     _scheduler.start()
@@ -55,13 +48,20 @@ def on_startup():
     print("  Scheduler:      http://localhost:8000/scheduler/status")
     print("  Chat (example): http://localhost:8000/chat/<token>")
     print("=" * 55)
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    """Gracefully stop the scheduler on server shutdown."""
+    yield
     if _scheduler.running:
         _scheduler.shutdown()
+
+
+app = FastAPI(
+    title="ARIA — BeyondSure Lead Engine",
+    description=(
+        "AI-powered lead engagement system. "
+        "Receives leads → scores them → generates responses → human approves → sends."
+    ),
+    version="0.1.0 — Phase 2 Beta",
+    lifespan=lifespan,
+)
 
 
 # ── Register routes ───────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ How it fits in the pipeline:
   → CRM updates in real time → alert fires when lead is ready for human contact
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -687,7 +687,7 @@ def get_chat_history(token: str, db: Session = Depends(get_db)):
 
     # Mark chat as opened
     if not lead.chat_opened_at:
-        lead.chat_opened_at = datetime.utcnow()
+        lead.chat_opened_at = datetime.now(timezone.utc)
         lead.status = "engaged" if lead.status == "new" else lead.status
         db.commit()
 
@@ -764,7 +764,7 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
         send_status=None,
     )
     db.add(inbound)
-    lead.last_interaction_at = datetime.utcnow()
+    lead.last_interaction_at = datetime.now(timezone.utc)
 
     # 2. Classify intent (even during guided flow — catch demo requests early)
     intent = classify_intent(message)
@@ -836,7 +836,7 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
 
             elif action == "reengage":
                 # "Maybe later" / "Just exploring" — warm farewell + schedule re-ping
-                lead.re_engage_after = datetime.utcnow() + timedelta(days=3)
+                lead.re_engage_after = datetime.now(timezone.utc) + timedelta(days=3)
                 lead.willing_for_demo = None  # keep null so flow can ask again on return
                 db.commit()
                 result = get_reengage_message(lead)

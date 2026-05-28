@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARIA · Lead Engine — BeyondSure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ambient ─ very subtle gradient orbs -->
+<div class="ambient ambient-1"></div>
+<div class="ambient ambient-2"></div>
+
+<div class="app">
+
+  <!-- ━━━━━━━━━━━━━ TOP BAR ━━━━━━━━━━━━━ -->
+  <header class="topbar">
+    <div class="logo-cluster">
+      <div class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="lg" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#6c5ce7"/></linearGradient></defs>
+            <path d="M10 8 C10 5 13 4 16 4 C19 4 22 5 22 8 L22 24 C22 27 19 28 16 28 C13 28 10 27 10 24 Z" fill="url(#lg)"/>
+            <circle cx="16" cy="11" r="2.5" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="logo-text">ARIA</span>
+      </div>
+      <div class="platforms">
+        <div class="pf-badge pf-fb"><span>f</span></div>
+        <div class="pf-badge pf-ig">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="3.5"/><circle cx="17.5" cy="6.5" r="1" fill="#fff"/></svg>
+        </div>
+        <div class="pf-badge pf-wa">
+          <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.3-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9 0-1.3.7-2 1-2.3.2-.2.5-.3.7-.3h.5c.2 0 .5-.1.7.5l1 2.3c.1.2.1.4 0 .6l-.3.4-.4.5c-.1.1-.3.3-.1.6.2.4 1 1.6 2.1 2.6 1.4 1.2 2.6 1.6 2.9 1.8.4.2.6.1.8-.1l.9-1.1c.2-.3.5-.2.8-.1l2.2 1c.3.2.5.2.6.4 0 .2 0 1-.2 1.5z"/></svg>
+        </div>
+        <button class="pf-add" title="Add channel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <nav class="navpills" id="navpills">
+      <button class="pill active" data-view="overview">Overview</button>
+      <button class="pill" data-view="leads">Leads</button>
+      <button class="pill" data-view="inbox">Inbox</button>
+      <button class="pill" data-view="approvals">Approvals</button>
+      <button class="pill" data-view="analytics">Analytics</button>
+    </nav>
+
+    <div class="user-cluster">
+      <button class="icon-btn" title="Search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+      <button class="icon-btn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .3 1.8l.1.1a2 2 0 0 1 0 2.8 2 2 0 0 1-2.8 0l-.1-.1a1.65 1.65 0 0 0-1.8-.3 1.65 1.65 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.65 1.65 0 0 0-1-1.5 1.65 1.65 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.65 1.65 0 0 0 .3-1.8 1.65 1.65 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.65 1.65 0 0 0 1.5-1 1.65 1.65 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.65 1.65 0 0 0 1.8.3H9a1.65 1.65 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.65 1.65 0 0 0 1 1.5 1.65 1.65 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.65 1.65 0 0 0-.3 1.8V9a1.65 1.65 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.65 1.65 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button class="icon-btn" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="notif-dot"></span>
+      </button>
+      <div class="user-avatar">
+        <img id="me-avatar" src="" alt="me">
+        <span class="status-dot"></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ════════════════ VIEW: OVERVIEW ════════════════ -->
+    <section class="view active" id="view-overview">
+      <div class="grid grid-overview">
+
+        <section class="col-left">
+          <!-- KPI ROW -->
+          <div class="kpi-row">
+            <div class="kpi">
+              <div class="kpi-top"><span class="kpi-label">Leads</span><span class="chip chip-up">+4</span></div>
+              <div class="kpi-value" id="kpi-leads">—</div>
+              <div class="kpi-sub">vs 52 last month</div>
+            </div>
+            <div class="kpi kpi-feature">
+              <div class="kpi-top"><span class="kpi-label">Hot pipeline</span><span class="chip chip-down">−8%</span></div>
+              <div class="kpi-value">₹24.8L</div>
+              <div class="kpi-sub">vs ₹27.2L last month</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-top"><span class="kpi-label">Demos</span><span class="chip chip-up">+6</span></div>
+              <div class="kpi-value" id="kpi-demos">—</div>
+              <div class="kpi-sub">vs 12 last month</div>
+            </div>
+          </div>
+
+          <!-- ANALYTICS CHART -->
+          <div class="card chart-card">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title">Lead intake</h2>
+                <div class="legend">
+                  <span class="leg"><span class="leg-sw" style="background:#6c5ce7"></span>Hot</span>
+                  <span class="leg"><span class="leg-sw" style="background:#34d399"></span>Warm</span>
+                  <span class="leg"><span class="leg-sw" style="background:#fbbf24"></span>Cold</span>
+                  <span class="leg"><span class="leg-sw" style="background:#c4b5fd"></span>Fresh</span>
+                  <span class="leg"><span class="leg-sw leg-dashed"></span>Forecast</span>
+                </div>
+              </div>
+              <div class="controls">
+                <button class="seg-btn active">Day</button>
+                <button class="seg-btn">Week</button>
+                <button class="seg-btn">Month</button>
+                <button class="icon-btn sm" title="Export">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chart-row">
+              <div class="chart-tip">
+                <div class="tip-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                </div>
+                <p>Brokers reply <b>2.4× faster</b> when ARIA's first message arrives before 11am IST. Try shifting morning sends.</p>
+                <button class="primary-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Run analysis
+                </button>
+              </div>
+              <div class="dot-chart" id="dot-chart">
+                <div class="dc-tooltip" id="dc-tooltip"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABLE -->
+          <div class="card table-card">
+            <div class="card-head">
+              <h2 class="card-title">Recent leads</h2>
+              <div class="head-tools">
+                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+              </div>
+            </div>
+            <div class="tabs" id="lead-tabs">
+              <button class="tab active" data-q="">All <span class="tab-count" id="c-all">—</span></button>
+              <button class="tab" data-q="hot">Hot <span class="tab-count" id="c-hot">—</span></button>
+              <button class="tab" data-q="warm">Warm <span class="tab-count" id="c-warm">—</span></button>
+              <button class="tab" data-q="cold">Cold</button>
+              <button class="tab" data-q="new">Fresh</button>
+            </div>
+            <div class="tbl-scroll">
+              <table class="leads-tbl">
+                <thead><tr><th>Client</th><th>Lead</th><th>Created</th><th>Score</th><th>Status</th><th></th></tr></thead>
+                <tbody id="leads-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <aside class="col-right">
+          <div class="card priority-card">
+            <div class="card-head"><h2 class="card-title">Priority actions</h2><a href="#" class="see-all">See all</a></div>
+            <ul class="priority-list" id="priority-list"></ul>
+          </div>
+
+          <!-- ── ARIA Co-pilot: "what does ARIA need from you?" ── -->
+          <div class="card copilot">
+            <header class="cp-head">
+              <div class="cp-mascot">
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                  <defs><linearGradient id="cpg" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#6c5ce7"/></linearGradient></defs>
+                  <circle cx="32" cy="34" r="22" fill="url(#cpg)"/>
+                  <circle cx="25" cy="30" r="2.5" fill="#fff"/>
+                  <circle cx="39" cy="30" r="2.5" fill="#fff"/>
+                  <path d="M24 40 Q32 45 40 40" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+                  <line x1="32" y1="12" x2="32" y2="6" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                  <circle cx="32" cy="5" r="2" fill="#fde68a"/>
+                </svg>
+              </div>
+              <div class="cp-titles">
+                <div class="cp-title">ARIA Co-pilot</div>
+                <div class="cp-live"><span class="live-dot"></span>Watching <b id="cp-monitor">24</b> conversations · drafting <b id="cp-drafting">3</b></div>
+              </div>
+            </header>
+
+            <div class="cp-section">
+              <div class="cp-sec-head">Needs your decision</div>
+              <ul class="cp-actions" id="cp-actions"></ul>
+            </div>
+
+            <div class="cp-divider"></div>
+
+            <div class="cp-section">
+              <div class="cp-sec-head">ARIA today</div>
+              <div class="cp-stats" id="cp-stats"></div>
+            </div>
+          </div>
+
+          <div class="mini-grid">
+            <div class="card mini-card">
+              <div class="mini-head"><span class="mini-title">Response time</span><svg viewBox="0 0 24 24" fill="none" stroke="#697086" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
+              <div class="mini-bars"><div class="mbar" style="height:18px;background:#e5e7eb"></div><div class="mbar" style="height:32px;background:#fde68a"></div><div class="mbar" style="height:52px;background:#fbbf24"></div><div class="mbar" style="height:38px;background:#fde68a"></div><div class="mbar" style="height:24px;background:#e5e7eb"></div><div class="mbar" style="height:16px;background:#e5e7eb"></div></div>
+              <div class="mini-tag">Median <b>14 min</b> · target 10 min</div>
+            </div>
+            <div class="card mini-card">
+              <div class="mini-head"><span class="mini-title">Conversion</span><svg viewBox="0 0 24 24" fill="none" stroke="#697086" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
+              <div class="agree-row"><div class="agree-bar"><div class="agree-fill" style="width:64%; background:linear-gradient(90deg,#fde68a,#34d399)"></div><div class="agree-marker" style="left:64%"></div></div></div>
+              <div class="agree-stats"><div><div class="agree-num">18</div><div class="agree-lbl">Demos</div></div><div style="text-align:right"><div class="agree-num">7</div><div class="agree-lbl">Negotiating</div></div></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ════════════════ VIEW: LEADS ════════════════ -->
+    <section class="view" id="view-leads">
+      <div class="grid grid-leads">
+        <section class="col-left">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2 class="card-title">Manage leads</h2>
+                <div class="card-sub">56 total · 10 hot, 20 warm, 16 cold, 10 fresh</div>
+              </div>
+              <div class="head-tools">
+                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+                <button class="primary-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
+                  Add lead
+                </button>
+              </div>
+            </div>
+            <div class="tabs" id="leads-view-tabs">
+              <button class="tab active" data-q="">All leads</button>
+              <button class="tab" data-q="hot">Hot</button>
+              <button class="tab" data-q="warm">Warm</button>
+              <button class="tab" data-q="cold">Cold</button>
+              <button class="tab" data-q="new">Fresh</button>
+            </div>
+            <div class="lead-grid" id="lead-grid"></div>
+          </div>
+        </section>
+
+        <aside class="col-right">
+          <div class="card priority-card">
+            <div class="card-head"><h2 class="card-title">Lead-source mix</h2></div>
+            <div class="source-mix" id="source-mix"></div>
+            <p class="hint-card">Facebook converts 1.4× better than Instagram for broker leads. Consider weighting spend.</p>
+          </div>
+
+          <div class="card aria-widget compact">
+            <div class="aria-greet">
+              <div class="aria-mascot small">
+                <svg viewBox="0 0 64 64"><defs><linearGradient id="ag2" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#6c5ce7"/></linearGradient></defs><circle cx="32" cy="34" r="22" fill="url(#ag2)"/><circle cx="25" cy="30" r="2.5" fill="#fff"/><circle cx="39" cy="30" r="2.5" fill="#fff"/><path d="M24 40 Q32 45 40 40" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
+              </div>
+              <div><div class="hi-text">Quick action</div><h2 class="aria-q">Find new clients</h2></div>
+            </div>
+            <button class="qa qa-wide">
+              <div class="qa-icon" style="background:#ede9fe;color:#6d28d9"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+              <div><span class="qa-label">Improve relationships</span><span class="qa-sub">Reach out to 3 silent warm leads</span></div>
+            </button>
+            <button class="qa qa-wide">
+              <div class="qa-icon" style="background:#dcfce7;color:#16a34a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.13a4 4 0 0 1 0 7.75M22 21v-2a4 4 0 0 0-3-3.87"/></svg></div>
+              <div><span class="qa-label">Find new clients</span><span class="qa-sub">ARIA found 12 lookalike brokers</span></div>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ════════════════ VIEW: INBOX ════════════════ -->
+    <section class="view" id="view-inbox">
+      <div class="grid grid-inbox">
+        <section class="card conv-card">
+          <header class="conv-head" id="conv-head"></header>
+          <div class="conv-thread" id="conv-thread"></div>
+          <form class="conv-input" onsubmit="event.preventDefault();">
+            <button type="button" class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <input type="text" placeholder="Send a message…">
+            <button class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </form>
+          <div class="conv-foot">ARIA can make mistakes. Consider checking important information.</div>
+        </section>
+
+        <aside class="card conv-list-card">
+          <div class="card-head">
+            <div><h2 class="card-title">All messages</h2></div>
+            <button class="dropdown">All platforms <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+          </div>
+          <div class="conv-filters" id="conv-filters">
+            <button class="conv-fchip active" data-f="all">All <span class="cf-count" id="cf-all">—</span></button>
+            <button class="conv-fchip" data-f="aria">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>
+              ARIA <span class="cf-count" id="cf-aria">—</span>
+            </button>
+            <button class="conv-fchip" data-f="team">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Needs team <span class="cf-count" id="cf-team">—</span>
+            </button>
+          </div>
+          <ul class="conv-list" id="conv-list"></ul>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ════════════════ VIEW: APPROVALS ════════════════ -->
+    <section class="view" id="view-approvals">
+      <div class="grid grid-approvals">
+        <section class="col-left">
+          <div class="appr-stats">
+            <div class="card stat-card">
+              <span class="stat-lbl">Pending review</span>
+              <span class="stat-val" id="ap-pending">—</span>
+              <span class="stat-sub stat-warn">awaiting human</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">Approved today</span>
+              <span class="stat-val">23</span>
+              <span class="stat-sub stat-good">+12 vs yesterday</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">Auto-rejection</span>
+              <span class="stat-val">2</span>
+              <span class="stat-sub">low confidence</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">Avg review time</span>
+              <span class="stat-val">3m 12s</span>
+              <span class="stat-sub stat-good">↓ 22%</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div><h2 class="card-title">Drafts awaiting your review</h2><div class="card-sub">ARIA writes — you sign off.</div></div>
+              <div class="tabs">
+                <button class="tab active">All</button>
+                <button class="tab">Pricing</button>
+                <button class="tab">Demo</button>
+                <button class="tab">Objections</button>
+              </div>
+            </div>
+            <div class="draft-list" id="draft-list"></div>
+          </div>
+        </section>
+
+        <aside class="col-right">
+          <div class="card aria-widget compact">
+            <div class="aria-greet">
+              <div class="aria-mascot small"><svg viewBox="0 0 64 64"><defs><linearGradient id="ag3" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#6c5ce7"/></linearGradient></defs><circle cx="32" cy="34" r="22" fill="url(#ag3)"/><circle cx="25" cy="30" r="2.5" fill="#fff"/><circle cx="39" cy="30" r="2.5" fill="#fff"/><path d="M24 40 Q32 45 40 40" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></div>
+              <div><div class="hi-text">Today</div><h2 class="aria-q">Review queue</h2></div>
+            </div>
+            <p class="hint-card">7 drafts are waiting. 3 are for high-score leads (>80). Approving those first protects your hottest pipeline.</p>
+            <button class="primary-btn primary-block">Review hot first →</button>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2 class="card-title">Today's activity</h2></div>
+            <ul class="activity-list" id="activity-list">
+              <li><span class="act-dot ad-green"></span><div><div class="act-title">Approved</div><div class="act-desc">Demo confirmation to Rajesh K.</div></div><span class="act-time">14:32</span></li>
+              <li><span class="act-dot ad-purple"></span><div><div class="act-title">Edited</div><div class="act-desc">Pricing reply to Sunita P.</div></div><span class="act-time">13:18</span></li>
+              <li><span class="act-dot ad-green"></span><div><div class="act-title">Approved</div><div class="act-desc">Onboarding answer to Ravi P.</div></div><span class="act-time">12:01</span></li>
+              <li><span class="act-dot ad-red"></span><div><div class="act-title">Rejected</div><div class="act-desc">Feature claim — off-policy</div></div><span class="act-time">11:42</span></li>
+              <li><span class="act-dot ad-green"></span><div><div class="act-title">Approved</div><div class="act-desc">Re-engagement to Nisha D.</div></div><span class="act-time">10:15</span></li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ════════════════ VIEW: ANALYTICS ════════════════ -->
+    <section class="view" id="view-analytics">
+      <div class="grid grid-analytics">
+        <section class="col-left">
+
+          <div class="ana-kpis">
+            <div class="card stat-card">
+              <span class="stat-lbl">Pipeline value</span>
+              <span class="stat-val">₹24.8L</span>
+              <span class="stat-sub stat-bad">−8% MoM</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">Conversion rate</span>
+              <span class="stat-val">10.7%</span>
+              <span class="stat-sub stat-good">+2.4 pp</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">Reply rate</span>
+              <span class="stat-val">53%</span>
+              <span class="stat-sub stat-good">+6 pp</span>
+            </div>
+            <div class="card stat-card">
+              <span class="stat-lbl">CAC</span>
+              <span class="stat-val">₹2,840</span>
+              <span class="stat-sub">~steady</span>
+            </div>
+          </div>
+
+          <div class="ana-grid">
+            <div class="card">
+              <div class="card-head"><div><h2 class="card-title">Funnel</h2><div class="card-sub">Form → Won, last 30 days</div></div></div>
+              <div class="funnel" id="funnel"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><div><h2 class="card-title">Lead sources</h2><div class="card-sub">By channel</div></div></div>
+              <div class="src-chart" id="src-chart"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><div><h2 class="card-title">Score distribution</h2><div class="card-sub">Where the pipeline sits</div></div></div>
+              <div class="histogram" id="histogram"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><div><h2 class="card-title">Weekly trend</h2><div class="card-sub">Leads vs demos booked</div></div></div>
+              <div class="weekly" id="weekly"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div><h2 class="card-title">Weekly cohorts</h2><div class="card-sub">How each intake week is progressing</div></div></div>
+            <div class="tbl-scroll">
+              <table class="leads-tbl">
+                <thead><tr><th>Week</th><th>Leads</th><th>Contacted</th><th>Replied</th><th>Demos</th><th>Won</th><th>Conv.</th></tr></thead>
+                <tbody id="cohort-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <aside class="col-right">
+          <div class="card insight-card">
+            <div class="card-head"><h2 class="card-title">ARIA insights</h2><span class="chip chip-flat">3 new</span></div>
+            <ul class="insight-list">
+              <li><div class="ins-icon" style="background:#fef3c7;color:#b45309"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg></div><div><div class="ins-title">Friday demos convert 38% better than Wednesdays.</div><div class="ins-sub">Last 8 weeks · 14 vs 21 demos</div></div></li>
+              <li><div class="ins-icon" style="background:#dcfce7;color:#16a34a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div><div><div class="ins-title">Score ≥75 leads close 4.2× faster.</div><div class="ins-sub">Prioritise outreach to top-quartile.</div></div></li>
+              <li><div class="ins-icon" style="background:#ede9fe;color:#6d28d9"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div><div class="ins-title">Replies dip 41% after 7pm IST.</div><div class="ins-sub">Lock the IST send window 9am–9pm.</div></div></li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2 class="card-title">Top performers</h2></div>
+            <ul class="top-list" id="top-list"></ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -92,7 +92,7 @@ def _queue_or_send(lead: Lead, message_text: str, message_type: str,
             sent = send_email(lead.email, subject, message_text)
             if sent:
                 interaction.send_status = "sent"
-                lead.last_interaction_at = datetime.utcnow()
+                lead.last_interaction_at = datetime.now(timezone.utc)
         else:
             # Outside 9am–9pm IST — stays "approved", sent on the next in-window run
             print(
@@ -114,7 +114,7 @@ def run_followup_1() -> dict:
       - No followup_1 already exists
     """
     db: Session = SessionLocal()
-    cutoff = datetime.utcnow() - timedelta(hours=FOLLOWUP_1_AFTER_HOURS)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=FOLLOWUP_1_AFTER_HOURS)
     queued = 0
     skipped = 0
 
@@ -154,7 +154,7 @@ def run_followup_2() -> dict:
       - No followup_2 already exists
     """
     db: Session = SessionLocal()
-    cutoff = datetime.utcnow() - timedelta(hours=FOLLOWUP_2_AFTER_HOURS)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=FOLLOWUP_2_AFTER_HOURS)
     queued = 0
     skipped = 0
 
@@ -211,7 +211,7 @@ def run_followup_7day() -> dict:
     After this, lead status → needs_call (human must reach out personally).
     """
     db: Session = SessionLocal()
-    cutoff = datetime.utcnow() - timedelta(days=FOLLOWUP_7DAY_AFTER_DAYS)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=FOLLOWUP_7DAY_AFTER_DAYS)
     queued = 0
     skipped = 0
 
@@ -259,7 +259,7 @@ def run_reengagements() -> dict:
     Resumes the conversation by sending the re-engagement message.
     """
     db: Session = SessionLocal()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     queued = 0
     skipped = 0
 
@@ -308,7 +308,7 @@ def run_score_decay() -> dict:
     Penalises leads: 31+ days = -20pts, 15-30 days = -10pts, 8-14 days = -5pts.
     """
     db: Session = SessionLocal()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     updated = 0
     skipped = 0
 
@@ -387,7 +387,7 @@ def run_pending_approved_sends() -> dict:
             sent = send_email(lead.email, subject, interaction.message_text)
             if sent:
                 interaction.send_status = "sent"
-                lead.last_interaction_at = datetime.utcnow()
+                lead.last_interaction_at = datetime.now(timezone.utc)
                 sent_count += 1
                 print(f"[Scheduler] Pending send delivered → Lead {lead.id} ({lead.first_name})")
             else:

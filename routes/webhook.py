@@ -13,7 +13,7 @@ Flow for new lead:
      Else → send immediately
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -106,7 +106,7 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
     # 0. Deduplication check
     existing = _find_duplicate(payload.email, payload.phone, db)
     if existing:
-        existing.last_interaction_at = datetime.utcnow()
+        existing.last_interaction_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing)
         print(
@@ -142,7 +142,7 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         ),
         channel="email",
         channel_id=payload.email,
-        consent_logged_at=datetime.utcnow(),
+        consent_logged_at=datetime.now(timezone.utc),
     )
     db.add(lead)
     db.flush()  # get lead.id before commit
@@ -178,9 +178,9 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         sent = send_email(lead.email, subject, message_body_with_cta)
         if sent:
             interaction.send_status = "sent"
-            lead.first_response_at = datetime.utcnow()
+            lead.first_response_at = datetime.now(timezone.utc)
             lead.status = "contacted"
-            lead.last_interaction_at = datetime.utcnow()
+            lead.last_interaction_at = datetime.now(timezone.utc)
             print(f"[Webhook] Chat link sent: {chat_url}")
 
     db.commit()
@@ -240,7 +240,7 @@ def receive_reply(lead_id: int, message: str, db: Session = Depends(get_db)):
 
     # Update lead state
     lead.current_intent = intent.label
-    lead.last_interaction_at = datetime.utcnow()
+    lead.last_interaction_at = datetime.now(timezone.utc)
     new_score = apply_engagement_delta(lead.lead_score, intent.label)
     lead.lead_score = new_score
     lead.lead_quality = score_to_quality(new_score)

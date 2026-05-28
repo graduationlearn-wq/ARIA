@@ -1,0 +1,663 @@
+/* ══════════════════════════════════════════════════════════════════
+   ARIA dashboard · 5-view application
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ─── tiny helpers ─── */
+const $  = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDate = iso => {
+  const [, m, d] = iso.split('-');
+  return `${parseInt(d)} ${MONTHS[parseInt(m)-1]}`;
+};
+const fmtMoney = v => v >= 1e7 ? `₹${(v/1e7).toFixed(1)}Cr` : v >= 1e5 ? `₹${(v/1e5).toFixed(1)}L` : `₹${(v/1e3).toFixed(0)}k`;
+
+/* ─── quality colours (one source of truth) ─── */
+const Q_COLOR = { hot:'#6c5ce7', warm:'#34d399', cold:'#fbbf24', new:'#a78bfa' };
+
+/* ═════════ icons (SVG strings) ═════════ */
+const ICONS = {
+  inbox:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+  handoff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+  clock:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  flame:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`,
+  check:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+  call:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  sparkle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>`,
+  chevron: `<svg class="pri-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>`,
+  more:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>`,
+  phone:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  star:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+  edit:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  x:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+  checkSm: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+};
+const PRI_TONE = {
+  warm:   { bg:'#fef3c7', fg:'#b45309' },
+  mint:   { bg:'#dcfce7', fg:'#047857' },
+  rose:   { bg:'#fce7f3', fg:'#be185d' },
+  violet: { bg:'#ede9fe', fg:'#6d28d9' },
+};
+
+const TYPE_LBL = { broker:'Broker', IMF:'IMF', agent:'Agent', corporate:'Corp.', posp:'POSP' };
+const PF_BG = { facebook:'#1877f2', instagram:'linear-gradient(135deg,#f09433,#dc2743,#bc1888)' };
+
+/* ══════════════════════ VIEW SWITCHING ══════════════════════ */
+function switchView(name) {
+  $$('.view').forEach(v => v.classList.remove('active'));
+  $(`view-${name}`).classList.add('active');
+  $$('#navpills .pill').forEach(p => p.classList.toggle('active', p.dataset.view === name));
+}
+function wireNav() {
+  $$('#navpills .pill').forEach(p => p.addEventListener('click', () => switchView(p.dataset.view)));
+}
+
+/* ══════════════════════ OVERVIEW : KPI counters ══════════════════════ */
+function renderKPIs() {
+  const total = LEADS.length;
+  const demos = LEADS.filter(l => ['demo_scheduled','demo_done','converted'].includes(l.status)).length;
+  animate($('kpi-leads'), total);
+  animate($('kpi-demos'), demos);
+}
+function animate(el, target, ms = 900) {
+  if (!el) return;
+  const t0 = performance.now();
+  (function step(now) {
+    const p = Math.min((now - t0) / ms, 1);
+    const ease = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(target * ease);
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+
+/* ══════════════════════ OVERVIEW : Priority ══════════════════════ */
+function renderPriority() {
+  $('priority-list').innerHTML = PRIORITY_ITEMS.map(it => {
+    const t = PRI_TONE[it.tone];
+    return `<li class="priority-item">
+      <div class="pri-icon" style="background:${t.bg};color:${t.fg}">${ICONS[it.icon]}</div>
+      <div class="pri-body">
+        <div class="pri-row">
+          <span class="pri-title">${it.title}</span>
+          <span class="pri-meta">${it.meta}</span>
+          <span class="pri-progress">${it.progress}</span>
+        </div>
+        <div class="pri-desc">${it.desc}</div>
+      </div>
+      ${ICONS.chevron}
+    </li>`;
+  }).join('');
+}
+
+/* ══════════════════════ OVERVIEW : ARIA Co-pilot ══════════════════════ */
+const CP_TONE = {
+  mint:   { bg:'#dcfce7', fg:'#047857' },
+  rose:   { bg:'#fce7f3', fg:'#be185d' },
+  violet: { bg:'#ede9fe', fg:'#6d28d9' },
+  warm:   { bg:'#fef3c7', fg:'#b45309' },
+};
+
+function renderCopilot() {
+  $('cp-monitor').textContent  = OPERATING_STATUS.monitoring;
+  $('cp-drafting').textContent = OPERATING_STATUS.drafting;
+
+  $('cp-actions').innerHTML = OPERATING_STATUS.decisions.map((d, i) => {
+    const tone = CP_TONE[d.tone];
+    return `<li class="cp-action" data-goto="${d.goto}">
+      <div class="cp-ico" style="background:${tone.bg};color:${tone.fg}">${ICONS[d.icon]}</div>
+      <div class="cp-body">
+        <div class="cp-a-title">${d.title}</div>
+        <div class="cp-a-meta">${d.meta}</div>
+      </div>
+      <button class="cp-a-cta">${d.cta} ›</button>
+    </li>`;
+  }).join('');
+
+  // clicking either the row or its CTA navigates to the relevant view
+  $$('#cp-actions .cp-action').forEach(el => {
+    el.addEventListener('click', () => switchView(el.dataset.goto));
+  });
+
+  $('cp-stats').innerHTML = OPERATING_STATUS.today.map(s =>
+    `<div class="cp-stat"><div class="cp-stat-val">${s.val}</div><div class="cp-stat-lbl">${s.lbl}</div></div>`
+  ).join('');
+}
+
+/* ══════════════════════ OVERVIEW : Leads table ══════════════════════ */
+let overviewQ = '';
+function renderOverviewTable() {
+  const rows = LEADS
+    .filter(l => !overviewQ || l.quality === overviewQ)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 8);
+
+  $('leads-body').innerHTML = rows.map(l => `
+    <tr>
+      <td>
+        <div class="client-cell">
+          <div class="client-avatar"><img src="${l.avatar}" alt=""><span class="pf-mini ${l.channel === 'facebook' ? 'fb':'ig'}"></span></div>
+          <div><div class="client-name">${l.name}</div><div class="client-handle">${l.handle}</div></div>
+        </div>
+      </td>
+      <td>
+        <div class="lead-cell">
+          <div class="lead-co">${l.company}</div>
+          <div class="lead-meta"><span class="type-tag">${TYPE_LBL[l.lead_type]||l.lead_type}</span><span>${l.city}</span></div>
+        </div>
+      </td>
+      <td><span style="color:var(--ink-3);font-size:12px">${fmtDate(l.created_at)}</span></td>
+      <td><div class="score-row"><div class="score-track"><div class="score-fill" style="width:${l.score}%"></div></div><span class="score-num">${l.score}</span></div></td>
+      <td><span class="status st-${l.status}">${l.status.replace(/_/g,' ')}</span></td>
+      <td><button class="row-more">${ICONS.more}</button></td>
+    </tr>
+  `).join('');
+
+  $('c-all').textContent  = LEADS.length;
+  $('c-hot').textContent  = LEADS.filter(l => l.quality === 'hot').length;
+  $('c-warm').textContent = LEADS.filter(l => l.quality === 'warm').length;
+}
+function wireOverviewTabs() {
+  $$('#lead-tabs .tab').forEach(t => t.addEventListener('click', () => {
+    $$('#lead-tabs .tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    overviewQ = t.dataset.q;
+    renderOverviewTable();
+  }));
+}
+
+/* ══════════════════════ OVERVIEW : DOT CHART (with tooltips) ══════════════════════ */
+let chartLayout = null;  // saved layout for tooltip positioning
+
+function renderDotChart() {
+  const host = $('dot-chart');
+  const W = host.clientWidth || 600;
+  const H = 240;
+  const PAD = { t: 30, r: 12, b: 28, l: 28 };
+  const chartW = W - PAD.l - PAD.r;
+  const chartH = H - PAD.t - PAD.b;
+
+  // group leads by day (sort hottest first within a day)
+  const days = [];
+  for (let d = 1; d <= 28; d++) {
+    const key = `2026-05-${String(d).padStart(2,'0')}`;
+    const todays = LEADS.filter(l => l.created_at === key)
+      .sort((a, b) => b.score - a.score);
+    days.push({ date: key, day: d, leads: todays });
+  }
+
+  // Focus: today (last day in range). If it has zero leads, fall back to most recent active day.
+  let focusIdx = days.length - 1;
+  if (!days[focusIdx].leads.length) {
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i].leads.length) { focusIdx = i; break; }
+    }
+  }
+
+  const maxCount = Math.max(4, ...days.map(d => d.leads.length));
+  const slot = chartW / days.length;
+  const dotR = 4.5;
+
+  // ONE y-scale used by both ticks AND dots — guarantees alignment.
+  const yScale = v => PAD.t + chartH - (v / maxCount) * chartH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">`;
+
+  // Y axis: one tick per integer (0..maxCount). Now labels mean exactly "n leads".
+  for (let v = 0; v <= maxCount; v++) {
+    const y = yScale(v);
+    svg += `<line class="dc-grid" x1="${PAD.l}" y1="${y}" x2="${W - PAD.r}" y2="${y}"/>`;
+    svg += `<text class="dc-y-lbl" x="${PAD.l - 6}" y="${y + 3}" text-anchor="end">${v}</text>`;
+  }
+
+  // focus highlight rail
+  const fx = PAD.l + focusIdx * slot + slot / 2;
+  svg += `<rect class="dc-highlight" x="${fx - 16}" y="${PAD.t - 4}" width="32" height="${chartH + 8}"/>`;
+
+  // forecast tail (projected to next 7 days)
+  const forecast = [];
+  for (let i = Math.max(0, days.length - 8); i < days.length; i++) {
+    const proj = Math.min(days[i].leads.length * 1.18, maxCount);
+    forecast.push(`${PAD.l + i * slot + slot / 2},${yScale(proj)}`);
+  }
+  if (forecast.length > 1) svg += `<polyline class="dc-tail" points="${forecast.join(' ')}"/>`;
+
+  // Dots: the (i+1)th lead in the stack sits exactly at y = yScale(i+1).
+  // So a column of 2 dots has its top dot touching the "2" gridline.
+  days.forEach((d, idx) => {
+    const x = PAD.l + idx * slot + slot / 2;
+    d.leads.forEach((lead, i) => {
+      const y = yScale(i + 1);
+      svg += `<circle class="dc-dot" cx="${x}" cy="${y}" r="${dotR}" fill="${Q_COLOR[lead.quality]}" opacity="0.95" data-lead-id="${lead.id}"/>`;
+    });
+  });
+
+  // Focus pill — sits just above the top dot of the focus day.
+  const n = days[focusIdx].leads.length;
+  const pillY = n > 0 ? yScale(n) - 28 : PAD.t - 22;
+  svg += `<g transform="translate(${fx - 26}, ${pillY})">
+    <rect class="dc-pill-bg" x="0" y="0" width="52" height="20"/>
+    <text class="dc-pill" x="26" y="13.5" text-anchor="middle">${n} lead${n !== 1 ? 's' : ''}</text>
+  </g>`;
+
+  // X-axis labels: a handful evenly + focus day labeled "Today" if it's May 28.
+  const labelIdx = new Set([0, 6, 13, focusIdx, 20]);
+  days.forEach((d, idx) => {
+    if (!labelIdx.has(idx)) return;
+    const x = PAD.l + idx * slot + slot / 2;
+    const cls = idx === focusIdx ? 'dc-x-lbl active' : 'dc-x-lbl';
+    const text = idx === days.length - 1 ? 'Today' : `May ${d.day}`;
+    svg += `<text class="${cls}" x="${x}" y="${H - 8}" text-anchor="middle">${text}</text>`;
+  });
+
+  svg += `</svg>`;
+  const tt = $('dc-tooltip');
+  host.innerHTML = svg;
+  host.appendChild(tt);
+  chartLayout = { W, H };
+  wireDotHover(host);
+}
+
+function wireDotHover(host) {
+  const tt = $('dc-tooltip');
+  host.addEventListener('mouseover', e => {
+    if (e.target.tagName !== 'circle' || !e.target.dataset.leadId) return;
+    const lead = LEADS.find(l => l.id == e.target.dataset.leadId);
+    if (!lead) return;
+    const dotBox = e.target.getBoundingClientRect();
+    const hostBox = host.getBoundingClientRect();
+    const left = dotBox.left + dotBox.width/2 - hostBox.left;
+    const top  = dotBox.top - hostBox.top;
+    tt.innerHTML = `
+      <div class="dc-tt-head">
+        <div class="dc-tt-avatar"><img src="${lead.avatar}" alt=""></div>
+        <div>
+          <div class="dc-tt-name">${lead.name}</div>
+          <div class="dc-tt-co">${lead.company} · ${lead.city}</div>
+        </div>
+      </div>
+      <div class="dc-tt-meta">
+        <span class="dc-tt-q" style="background:${Q_COLOR[lead.quality]}"></span>
+        Score ${lead.score} · ${lead.status.replace(/_/g,' ')}
+      </div>`;
+    tt.style.left = left + 'px';
+    tt.style.top = top + 'px';
+    tt.classList.add('show');
+  });
+  host.addEventListener('mouseout', e => {
+    if (e.target.tagName === 'circle') $('dc-tooltip').classList.remove('show');
+  });
+}
+
+/* ══════════════════════ LEADS VIEW ══════════════════════ */
+let leadsQ = '';
+
+function pfDotStyle(channel) {
+  return channel === 'facebook' ? 'background:#1877f2' : 'background:linear-gradient(135deg,#f09433,#dc2743,#bc1888)';
+}
+
+function renderLeadGrid() {
+  const cards = LEADS
+    .filter(l => !leadsQ || l.quality === leadsQ)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 18);
+
+  $('lead-grid').innerHTML = cards.map(l => {
+    const owner = l.owner ? TEAM[l.owner] : null;
+    const ownerPill = owner
+      ? `<div class="lc-owner" title="Owner: ${owner.name}"><div class="lc-owner-av"><img src="${owner.avatar}" alt=""></div>${owner.name}</div>`
+      : `<div class="lc-owner" style="color:var(--ink-4)" title="Unassigned">· unassigned</div>`;
+    return `
+      <div class="lead-card">
+        <span class="lc-quality-dot lc-q-${l.quality}"></span>
+        ${ownerPill}
+        <div class="lc-avatar">
+          <img src="${l.avatar}" alt="">
+          <span class="pf-mini" style="${pfDotStyle(l.channel)}"></span>
+        </div>
+        <div class="lc-name">${l.name}</div>
+        <div class="lc-role">${l.role} · ${l.company}</div>
+        <div class="lc-grid">
+          <div class="lc-stat">
+            <span class="lc-stat-lbl">From</span>
+            <span class="lc-channel" style="${pfDotStyle(l.channel)}"></span>
+          </div>
+          <div class="lc-stat">
+            <span class="lc-stat-lbl">Sector</span>
+            <span class="lc-stat-val">${TYPE_LBL[l.lead_type] || l.lead_type}</span>
+          </div>
+          <div class="lc-stat">
+            <span class="lc-stat-lbl">Value</span>
+            <span class="lc-stat-val">${fmtMoney(l.pipeline)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderSourceMix() {
+  const fb = LEADS.filter(l => l.channel === 'facebook').length;
+  const ig = LEADS.filter(l => l.channel === 'instagram').length;
+  $('source-mix').innerHTML = `
+    <div class="sm-bucket" style="--sm-tint:#dbeafe">
+      <span class="sm-num">${fb}</span><span class="sm-lbl">Facebook</span>
+    </div>
+    <div class="sm-bucket" style="--sm-tint:#fce7f3">
+      <span class="sm-num">${ig}</span><span class="sm-lbl">Instagram</span>
+    </div>
+    <div class="sm-bucket" style="--sm-tint:#dcfce7">
+      <span class="sm-num">0</span><span class="sm-lbl">Web direct</span>
+    </div>
+  `;
+}
+
+function wireLeadsTabs() {
+  $$('#leads-view-tabs .tab').forEach(t => t.addEventListener('click', () => {
+    $$('#leads-view-tabs .tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    leadsQ = t.dataset.q;
+    renderLeadGrid();
+  }));
+}
+
+/* ══════════════════════ INBOX VIEW ══════════════════════ */
+let activeConv = 0;
+let convFilter = 'all';   // 'all' | 'aria' | 'team'
+
+function filteredConvs() {
+  if (convFilter === 'aria') return CONVERSATIONS.filter(c => !c.escalated);
+  if (convFilter === 'team') return CONVERSATIONS.filter(c => c.escalated);
+  return CONVERSATIONS;
+}
+
+function renderConvList() {
+  // counts (always show against full list, not filtered)
+  $('cf-all').textContent  = CONVERSATIONS.length;
+  $('cf-aria').textContent = CONVERSATIONS.filter(c => !c.escalated).length;
+  $('cf-team').textContent = CONVERSATIONS.filter(c =>  c.escalated).length;
+
+  const list = filteredConvs();
+  $('conv-list').innerHTML = list.map((c) => {
+    const idx = CONVERSATIONS.indexOf(c);   // preserve global index for click
+    const teamFlag = c.escalated
+      ? `<span class="cli-flag">${ICONS.handoff} Needs team</span>`
+      : '';
+    return `
+      <li class="conv-list-item ${idx === activeConv ? 'active' : ''}" data-i="${idx}">
+        <div class="cli-avatar">
+          <img src="${c.lead.avatar}" alt="">
+          <span class="pf-mini ${c.lead.channel === 'facebook' ? 'fb':'ig'}"></span>
+        </div>
+        <div class="cli-body">
+          <div class="cli-row">
+            <span class="cli-name">${c.lead.name}</span>
+            <span class="cli-time">${c.last_at}</span>
+          </div>
+          <div class="cli-preview">${c.preview}</div>
+          ${teamFlag}
+        </div>
+        ${c.unread ? `<div class="cli-unread">${c.unread}</div>` : ''}
+      </li>
+    `;
+  }).join('');
+
+  $$('#conv-list .conv-list-item').forEach(li => {
+    li.addEventListener('click', () => {
+      activeConv = parseInt(li.dataset.i);
+      renderConvList();
+      renderConvThread();
+    });
+  });
+}
+
+function wireConvFilters() {
+  $$('#conv-filters .conv-fchip').forEach(b => {
+    b.addEventListener('click', () => {
+      $$('#conv-filters .conv-fchip').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      convFilter = b.dataset.f;
+      renderConvList();
+    });
+  });
+}
+
+function renderConvThread() {
+  const c = CONVERSATIONS[activeConv];
+  if (!c) return;
+
+  $('conv-head').innerHTML = `
+    <div class="ch-avatar"><img src="${c.lead.avatar}" alt=""></div>
+    <div>
+      <div class="ch-name">${c.lead.name}</div>
+      <div class="ch-meta">${c.lead.city} · Local time ${new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})}</div>
+    </div>
+    <div class="ch-tools">
+      <button class="icon-btn sm" title="Call">${ICONS.phone}</button>
+      <button class="icon-btn sm" title="Save">${ICONS.star}</button>
+      <button class="icon-btn sm">${ICONS.more}</button>
+    </div>
+  `;
+
+  // Walk messages — inject a handoff divider the first time we see a `human` sender.
+  // Preserves full lead↔ARIA history so the teammate picks up with context.
+  let dividerInjected = false;
+  $('conv-thread').innerHTML = c.messages.map(m => {
+    let divider = '';
+    if (m.from === 'human' && !dividerInjected) {
+      dividerInjected = true;
+      const tm = TEAM[c.handed_to] || TEAM[m.who];
+      divider = `
+        <div class="handoff-divider">
+          <div class="ho-line"></div>
+          <div class="handoff-pill">
+            <div class="ho-avatar"><img src="${tm.avatar}" alt=""></div>
+            <span>ARIA handed off to <b>${tm.name}</b></span>
+            <span class="ho-time">· ${c.handoff_at}</span>
+          </div>
+          <div class="ho-line"></div>
+        </div>
+      `;
+    }
+    return divider + renderBubble(m);
+  }).join('');
+}
+
+function renderBubble(m) {
+  if (m.from === 'human') {
+    const tm = TEAM[m.who];
+    return `
+      <div class="bubble-row human">
+        <div class="bubble-who"><div class="bubble-who-avatar"><img src="${tm.avatar}" alt=""></div>${tm.name} · ${tm.role}</div>
+        <div class="bubble human">${m.text}</div>
+        <div class="bubble-time">${m.t}</div>
+      </div>
+    `;
+  }
+  const cls = m.from === 'lead' ? 'lead' : 'aria';
+  return `
+    <div class="bubble-row ${cls}">
+      <div class="bubble ${cls}">${m.text}</div>
+      <div class="bubble-time">${m.t}</div>
+    </div>
+  `;
+}
+
+/* ══════════════════════ APPROVALS VIEW ══════════════════════ */
+function renderDrafts() {
+  $('ap-pending').textContent = PENDING_DRAFTS.length;
+  $('draft-list').innerHTML = PENDING_DRAFTS.map(d => {
+    const lead = LEADS.find(l => l.id === d.lead_id);
+    if (!lead) return '';
+    const time = d.created_at.split('T')[1].slice(0, 5);
+    return `
+      <div class="draft">
+        <div class="draft-lead">
+          <div class="client-avatar"><img src="${lead.avatar}" alt=""></div>
+          <div>
+            <div class="draft-lead-name">${lead.name}</div>
+            <div class="draft-lead-co">${lead.company} · ${lead.city}</div>
+          </div>
+        </div>
+        <div class="draft-body">
+          <div class="draft-meta">
+            <span class="intent-tag">${d.intent.replace(/_/g, ' ')}</span>
+            <span class="draft-time">Drafted at ${time}</span>
+            <span class="status st-${lead.status}">${lead.status.replace(/_/g,' ')}</span>
+          </div>
+          <div class="draft-subject">${d.subject}</div>
+          <div class="draft-text">${d.body}</div>
+        </div>
+        <div class="draft-actions">
+          <button class="btn btn-approve">${ICONS.checkSm} Approve &amp; send</button>
+          <button class="btn btn-edit">${ICONS.edit} Edit</button>
+          <button class="btn btn-reject">${ICONS.x} Reject</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ══════════════════════ ANALYTICS VIEW ══════════════════════ */
+function renderFunnel() {
+  $('funnel').innerHTML = ANALYTICS.funnel.map(s => `
+    <div class="funnel-row">
+      <span class="funnel-stage">${s.stage}</span>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${s.pct}%"><span class="fpct">${s.pct}%</span></div></div>
+      <span class="funnel-count">${s.count}</span>
+    </div>
+  `).join('');
+}
+
+function renderSourceChart() {
+  const total = ANALYTICS.sources.reduce((a, s) => a + s.count, 0);
+  const C = 130, R = 52, SW = 18;
+  const circ = 2 * Math.PI * R;
+  let offset = 0;
+  const segments = ANALYTICS.sources.map(s => {
+    const frac = s.count / total;
+    const dash = frac * circ;
+    const seg = `<circle cx="${C/2}" cy="${C/2}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${C/2} ${C/2})"/>`;
+    offset += dash;
+    return seg;
+  }).join('');
+
+  $('src-chart').innerHTML = `
+    <div class="donut-wrap">
+      <svg viewBox="0 0 ${C} ${C}" width="${C}" height="${C}">${segments}</svg>
+      <div class="donut-center"><div><div class="donut-num">${total}</div><div class="donut-lbl">Leads</div></div></div>
+    </div>
+    <div class="src-legend">
+      ${ANALYTICS.sources.map(s => `
+        <div class="src-row">
+          <span class="src-sw" style="background:${s.color}"></span>
+          <span class="src-name">${s.name}</span>
+          <span class="src-count">${s.count}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderHistogram() {
+  const max = Math.max(...ANALYTICS.scoreBuckets.map(b => b.n));
+  $('histogram').innerHTML = ANALYTICS.scoreBuckets.map(b => {
+    const h = (b.n / max) * 110;
+    return `<div class="hg-bar">
+      <div class="hg-track" style="height:${h}px"><span class="hg-n">${b.n}</span></div>
+      <span class="hg-lbl">${b.b}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderWeekly() {
+  const maxL = Math.max(...ANALYTICS.weeklyTrend.map(w => w.leads));
+  $('weekly').innerHTML = ANALYTICS.weeklyTrend.map(w => `
+    <div class="weekly-row">
+      <span class="weekly-lbl">${w.w}</span>
+      <div class="weekly-bars">
+        <div class="wb1" style="height:${(w.leads/maxL)*28}px"></div>
+        <div class="wb2" style="height:${(w.demos/maxL)*28}px"></div>
+      </div>
+      <span class="weekly-nums"><b>${w.leads}</b> · ${w.demos}</span>
+    </div>
+  `).join('');
+}
+
+function renderCohorts() {
+  $('cohort-body').innerHTML = ANALYTICS.cohorts.map(c => {
+    const conv = c.leads ? ((c.won / c.leads) * 100).toFixed(1) : '0.0';
+    return `<tr>
+      <td><b>${c.week}</b></td>
+      <td>${c.leads}</td>
+      <td>${c.contacted}</td>
+      <td>${c.replied}</td>
+      <td>${c.demos}</td>
+      <td>${c.won}</td>
+      <td><b>${conv}%</b></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTopPerformers() {
+  const top = [...LEADS].sort((a,b) => b.score - a.score).slice(0, 5);
+  const rankCls = ['gold', 'silver', 'bronze'];
+  $('top-list').innerHTML = top.map((l, i) => `
+    <li class="top-row">
+      <div class="top-rank ${rankCls[i] || ''}">${i + 1}</div>
+      <div class="client-avatar"><img src="${l.avatar}" alt=""></div>
+      <span class="top-name">${l.name}</span>
+      <span class="top-score">${l.score}</span>
+    </li>
+  `).join('');
+}
+
+/* ══════════════════════ ME AVATAR ══════════════════════ */
+function renderMe() {
+  const img = $('me-avatar');
+  if (img) img.src = ME.avatar;
+}
+
+/* ══════════════════════ BOOT ══════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  renderMe();
+  wireNav();
+
+  // overview
+  renderKPIs();
+  renderPriority();
+  renderCopilot();
+  renderOverviewTable();
+  wireOverviewTabs();
+  renderDotChart();
+
+  // leads
+  renderLeadGrid();
+  renderSourceMix();
+  wireLeadsTabs();
+
+  // inbox — default to the first escalated thread so the handoff flow is visible
+  const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
+  if (firstEscalated >= 0) activeConv = firstEscalated;
+  wireConvFilters();
+  renderConvList();
+  renderConvThread();
+
+  // approvals
+  renderDrafts();
+
+  // analytics
+  renderFunnel();
+  renderSourceChart();
+  renderHistogram();
+  renderWeekly();
+  renderCohorts();
+  renderTopPerformers();
+
+  // re-render chart on resize
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(renderDotChart, 150);
+  });
+});

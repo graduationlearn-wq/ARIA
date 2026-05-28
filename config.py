@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     base_url: str = "http://localhost:8000"           # used to build chat links in emails
     alert_email: str = ""                             # team inbox for hot-lead alerts
     whatsapp_business_number: str = ""                # team's WA number for internal alerts (e.g. "919304712348")
-    google_meet_link: str = ""                        # Google Meet link sent to leads on demo booking
-
     # WhatsApp Cloud API (Meta)
     # Get from: developers.facebook.com → your app → WhatsApp → API Setup
     whatsapp_api_token: str = ""                      # Bearer token (use permanent System User token for prod)
@@ -36,12 +34,7 @@ class Settings(BaseSettings):
     whatsapp_business_account_id: str = ""            # WhatsApp Business Account ID (from API Setup page)
     whatsapp_webhook_verify_token: str = "aria_beyondsure_2024"  # match this in Meta dashboard webhook config
 
-    # Demo booking
-    # Removed: google_meet_link — Meet links are shared by the team manually during the call,
-    # not included in automated messages to avoid confusion (phone call vs video call).
-
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 
 settings = Settings()

@@ -259,8 +259,7 @@ class TestChatFlowParser:
 
     def test_should_not_alert_twice(self):
         from services.chat_flow import should_alert_human
-        from datetime import datetime as dt
-        lead = _make_lead(alert_sent_at=dt.utcnow())
+        lead = _make_lead(alert_sent_at=datetime.now(timezone.utc))
         assert should_alert_human(lead, "demo_request") is False
 
 

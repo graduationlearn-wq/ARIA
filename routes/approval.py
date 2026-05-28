@@ -11,7 +11,7 @@ Endpoints:
   POST /approval/{id}/reject     — reject a draft (mark as rejected, no send)
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -86,9 +86,9 @@ def approve_draft(interaction_id: int, db: Session = Depends(get_db)):
         interaction.send_status = "sent"
         interaction.handled_by = "human_approved"
         if not lead.first_response_at:
-            lead.first_response_at = datetime.utcnow()
+            lead.first_response_at = datetime.now(timezone.utc)
             lead.status = "contacted"
-        lead.last_interaction_at = datetime.utcnow()
+        lead.last_interaction_at = datetime.now(timezone.utc)
         db.commit()
         return {"status": "sent", "draft_id": interaction_id, "to": lead.email}
     else:
@@ -123,9 +123,9 @@ def edit_and_send(
     if sent:
         interaction.send_status = "sent"
         if not lead.first_response_at:
-            lead.first_response_at = datetime.utcnow()
+            lead.first_response_at = datetime.now(timezone.utc)
             lead.status = "contacted"
-        lead.last_interaction_at = datetime.utcnow()
+        lead.last_interaction_at = datetime.now(timezone.utc)
         db.commit()
         return {"status": "sent_with_edits", "draft_id": interaction_id}
     else:

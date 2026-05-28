@@ -157,7 +157,7 @@ def send_human_alert(lead: Lead, intent: str, last_message: str, db: Session) ->
     sent = send_email(settings.alert_email, subject, body)
 
     if sent:
-        lead.alert_sent_at = datetime.utcnow()
+        lead.alert_sent_at = datetime.now(timezone.utc)
         db.commit()
         print(f"[Alert] Human alert sent for lead {lead.id} — {lead.first_name} ({intent})")
     else:
