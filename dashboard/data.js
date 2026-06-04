@@ -10,9 +10,9 @@ function avatar(seed, style = 'notionists') {
 }
 
 const ME = {
-  name:   'Kunal',
-  email:  'kunal@insurance4life.in',
-  avatar: avatar('Kunal Beyondsure', 'avataaars'),
+  name:   'Arnav',
+  email:  'arnavkumar9372@gmail.com',
+  avatar: avatar('Arnav', 'avataaars'),
 };
 
 const LEADS = [
@@ -85,7 +85,7 @@ const TEAM = {
   aakash: { name:'Aakash', role:'Head of Sales',     avatar: avatar('Aakash Sales', 'avataaars') },
   priya:  { name:'Priya',  role:'Customer Success',  avatar: avatar('Priya CSM',    'avataaars') },
   riya:   { name:'Riya',   role:'Onboarding Lead',   avatar: avatar('Riya Onboard', 'avataaars') },
-  kunal:  { name:'Kunal',  role:'Founder',           avatar: ME.avatar },
+  kunal:  { name:'Arnav',  role:'Founder',          avatar: ME.avatar },
 };
 
 /* assign each lead to a team owner (CRM-style "deal owner") */
