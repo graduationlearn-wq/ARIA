@@ -94,6 +94,9 @@ body {
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━ TOP BAR ━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
+  /* backdrop-filter makes this a stacking context; raise it so its popovers
+     (notifications, channels, avatar) paint above the main content below. */
+  position: relative; z-index: 100;
   padding: 9px 10px 9px 16px;
   background: rgba(255,255,255,0.75);
   backdrop-filter: blur(20px) saturate(180%);
@@ -1419,7 +1422,8 @@ body {
   background: var(--rose); border: 2px solid var(--bg-elev);
 }
 
-/* Channels popover */
+/* Channels popover — left-aligned (it lives on the left side of the topbar) */
+#channel-popover { left: 0; right: auto; }
 .popover-anchor .pf-add { cursor: pointer; }
 .chan-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); }
 .chan-row:hover { background: var(--bg-soft); }

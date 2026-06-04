@@ -406,7 +406,14 @@
         <aside class="card conv-list-card">
           <div class="card-head">
             <div><h2 class="card-title">All messages</h2></div>
-            <button class="dropdown" id="conv-platform-btn">All platforms <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+            <div class="popover-anchor">
+              <button class="dropdown" id="conv-platform-btn">All platforms <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+              <div class="popover" id="conv-platform-menu" hidden>
+                <button class="menu-item" data-plat="all">All platforms</button>
+                <button class="menu-item" data-plat="facebook">Facebook</button>
+                <button class="menu-item" data-plat="instagram">Instagram</button>
+              </div>
+            </div>
           </div>
           <div class="conv-filters" id="conv-filters">
             <button class="conv-fchip active" data-f="all">All <span class="cf-count" id="cf-all">—</span></button>

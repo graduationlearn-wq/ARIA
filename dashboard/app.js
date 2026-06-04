@@ -652,15 +652,18 @@ function renderDotChart() {
     <text class="dc-pill" x="26" y="13.5" text-anchor="middle">${n} lead${n !== 1 ? 's' : ''}</text>
   </g>`;
 
-  // X-axis labels — label all when few buckets (week/month), sparse for day view
+  // X-axis labels — adaptive density: ~7 evenly-spaced labels max, always show
+  // the last one, and skip any that would collide with it. Prevents overlap in
+  // every mode (28 days / 12 weeks / 6 months).
   const lastWord = { day: 'Today', week: 'This wk', month: 'This mo' }[chartMode];
-  const showAll = days.length <= 12;
-  const labelIdx = new Set([0, 6, 13, 20, focusIdx]);
+  const lastIdx  = days.length - 1;
+  const step     = Math.max(1, Math.ceil(days.length / 7));
   days.forEach((d, idx) => {
-    if (!showAll && !labelIdx.has(idx)) return;
+    const isLast = idx === lastIdx;
+    if (!isLast && (idx % step !== 0 || lastIdx - idx < step)) return;
     const x = PAD.l + idx * slot + slot / 2;
     const cls = idx === focusIdx ? 'dc-x-lbl active' : 'dc-x-lbl';
-    const text = d.isLast ? lastWord : d.label;
+    const text = isLast ? lastWord : d.label;
     svg += `<text class="${cls}" x="${x}" y="${H - 8}" text-anchor="middle">${text}</text>`;
   });
 
@@ -952,15 +955,18 @@ function wireConvFilters() {
     });
   });
 
-  // Platform dropdown cycles All → Facebook → Instagram
-  const PLATS = ['all', 'facebook', 'instagram'];
-  const PLAT_LBL = { all: 'All platforms', facebook: 'Facebook', instagram: 'Instagram' };
-  $('conv-platform-btn')?.addEventListener('click', () => {
-    const i = PLATS.indexOf(convPlatform);
-    convPlatform = PLATS[(i + 1) % PLATS.length];
-    const btn = $('conv-platform-btn');
-    btn.childNodes[0].nodeValue = PLAT_LBL[convPlatform] + ' ';
-    renderConvList();
+  // Platform dropdown — real menu (All / Facebook / Instagram)
+  $('conv-platform-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    togglePopover('conv-platform-menu');
+  });
+  $$('#conv-platform-menu .menu-item').forEach(mi => {
+    mi.addEventListener('click', () => {
+      convPlatform = mi.dataset.plat;
+      $('conv-platform-btn').childNodes[0].nodeValue = mi.textContent + ' ';
+      closeAllPopovers();
+      renderConvList();
+    });
   });
 }
 
@@ -1429,7 +1435,7 @@ async function loadConfig() {
 
 /* ── Generic popover open/close ── */
 function closeAllPopovers(except) {
-  ['notif-panel', 'avatar-menu', 'channel-popover'].forEach(id => {
+  ['notif-panel', 'avatar-menu', 'channel-popover', 'conv-platform-menu'].forEach(id => {
     if (id !== except) { const el = $(id); if (el) el.hidden = true; }
   });
 }
