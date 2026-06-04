@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from database import get_db
 from models.interaction import Interaction
@@ -64,6 +65,72 @@ def get_approval_queue(db: Session = Depends(get_db)):
     return {
         "total_pending": len(results),
         "drafts": results,
+    }
+
+
+# ── GET /approval/stats ───────────────────────────────────────────────────────
+@router.get("/stats")
+def approval_stats(db: Session = Depends(get_db)):
+    """
+    Real approval-queue metrics + recent review activity for the dashboard.
+    All figures are computed from the interactions table — nothing hardcoded.
+    """
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+
+    base = db.query(Interaction).filter(Interaction.direction == "outbound")
+
+    pending = base.filter(Interaction.send_status == "pending_approval").count()
+    rejected = base.filter(Interaction.send_status == "rejected").count()
+    sent_total = base.filter(Interaction.send_status == "sent").count()
+    approved_today = (
+        base.filter(
+            Interaction.send_status == "sent",
+            Interaction.handled_by.in_(["human_approved", "human_edited", "human"]),
+            Interaction.timestamp >= today_start,
+        ).count()
+    )
+
+    # Recent review activity (last 10 sent/rejected outbound messages)
+    recent = (
+        db.query(Interaction)
+        .filter(
+            Interaction.direction == "outbound",
+            or_(Interaction.send_status == "sent", Interaction.send_status == "rejected"),
+        )
+        .order_by(Interaction.timestamp.desc())
+        .limit(10)
+        .all()
+    )
+
+    activity = []
+    for i in recent:
+        lead = db.query(Lead).filter(Lead.id == i.lead_id).first()
+        if i.send_status == "rejected":
+            action, tone = "Rejected", "red"
+        elif i.handled_by == "human_edited":
+            action, tone = "Edited", "purple"
+        elif i.handled_by == "human":
+            action, tone = "Replied", "green"
+        else:
+            action, tone = "Approved", "green"
+        summary = (i.message_text or "").replace("\n", " ").strip()
+        activity.append({
+            "action": action,
+            "tone": tone,
+            "lead_name": lead.first_name if lead else "Unknown",
+            "summary": (summary[:52] + "…") if len(summary) > 52 else summary,
+            "time": i.timestamp.strftime("%H:%M") if i.timestamp else "",
+        })
+
+    return {
+        "stats": {
+            "pending": pending,
+            "approved_today": approved_today,
+            "rejected": rejected,
+            "sent_total": sent_total,
+        },
+        "activity": activity,
     }
 
 

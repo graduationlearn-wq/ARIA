@@ -13,6 +13,8 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 
 /** Live summary stats from /leads/stats (populated by loadLiveData) */
 let LIVE_STATS = {};
+/** Approval stats + recent activity from /approval/stats */
+let APPROVAL = { stats: {}, activity: [] };
 
 /* ══════════════════════════════════════════════════════════════════
    LIVE DATA LAYER
@@ -142,6 +144,12 @@ async function loadLiveData() {
       { val: hot,                   lbl: 'Hot' },
       { val: PENDING_DRAFTS.length, lbl: 'Pending approvals' },
     ];
+
+    // Fetch approval stats + recent activity
+    try {
+      const sRes = await fetch('/approval/stats');
+      if (sRes.ok) APPROVAL = await sRes.json();
+    } catch (_) { /* keep last known */ }
 
     // Fetch analytics for the Analytics view
     try {
@@ -280,7 +288,7 @@ async function approveDraft(draftId, btn) {
     const r = await fetch(`/approval/${draftId}/approve`, { method: 'POST' });
     if (r.ok) {
       await loadLiveData();
-      renderDrafts(); renderKPIs(); renderCopilot(); renderOverviewTable();
+      renderDrafts(); renderActivity(); renderKPIs(); renderCopilot(); renderOverviewTable(); renderLeadsQuick();
     } else {
       btn.disabled = false;
       btn.innerHTML = `${ICONS.checkSm} Approve &amp; send`;
@@ -978,20 +986,57 @@ function renderBubble(m) {
 }
 
 /* ══════════════════════ APPROVALS VIEW ══════════════════════ */
-function renderDrafts() {
-  $('ap-pending').textContent = PENDING_DRAFTS.length;
+let draftFilter = '';   // '' | 'pricing' | 'demo' | 'objection'
 
-  if (!PENDING_DRAFTS.length) {
+function renderApprovalStats() {
+  const s = APPROVAL.stats || {};
+  if ($('ap-pending'))  $('ap-pending').textContent  = s.pending ?? PENDING_DRAFTS.length;
+  if ($('ap-approved')) $('ap-approved').textContent = s.approved_today ?? 0;
+  if ($('ap-rejected')) $('ap-rejected').textContent = s.rejected ?? 0;
+  if ($('ap-sent'))     $('ap-sent').textContent     = s.sent_total ?? 0;
+}
+
+function renderActivity() {
+  const host = $('activity-list');
+  if (!host) return;
+  const acts = APPROVAL.activity || [];
+  const TONE = { green: 'ad-green', purple: 'ad-purple', red: 'ad-red' };
+  if (!acts.length) {
+    host.innerHTML = `<li style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px;list-style:none">No activity yet — approve a draft to see it here.</li>`;
+    return;
+  }
+  host.innerHTML = acts.map(a => `
+    <li>
+      <span class="act-dot ${TONE[a.tone] || 'ad-green'}"></span>
+      <div>
+        <div class="act-title">${esc(a.action)}</div>
+        <div class="act-desc">${esc(a.summary || '')} <span style="color:var(--ink-4)">· ${esc(a.lead_name)}</span></div>
+      </div>
+      <span class="act-time">${esc(a.time)}</span>
+    </li>`).join('');
+}
+
+function renderDrafts() {
+  renderApprovalStats();
+
+  const filtered = draftFilter
+    ? PENDING_DRAFTS.filter(d => (d.intent || '').includes(draftFilter))
+    : PENDING_DRAFTS;
+
+  if (!filtered.length) {
+    const msg = PENDING_DRAFTS.length
+      ? `No ${draftFilter} drafts right now.`
+      : 'No drafts waiting for review';
     $('draft-list').innerHTML = `
       <div style="padding:48px;text-align:center;color:var(--ink-4)">
         <div style="font-size:32px;margin-bottom:8px">✓</div>
         <div style="font-weight:600;color:var(--ink-2)">All clear</div>
-        <div style="font-size:13px;margin-top:4px">No drafts waiting for review</div>
+        <div style="font-size:13px;margin-top:4px">${msg}</div>
       </div>`;
     return;
   }
 
-  $('draft-list').innerHTML = PENDING_DRAFTS.map(d => {
+  $('draft-list').innerHTML = filtered.map(d => {
     // Prefer live LEADS lookup; fall back to API fields stored in draft
     const lead = LEADS.find(l => l.id === d.lead_id) || {
       avatar: avatarUrl(d._lead_name || 'Unknown'),
@@ -1035,6 +1080,28 @@ function renderDrafts() {
   });
   $$('#draft-list .btn-reject').forEach(btn => {
     btn.addEventListener('click', () => rejectDraft(btn.dataset.did, btn));
+  });
+}
+
+/* ── Wire Approvals controls ── */
+function wireApprovals() {
+  $$('#draft-tabs .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      $$('#draft-tabs .tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      draftFilter = tab.dataset.intent || '';
+      renderDrafts();
+    });
+  });
+
+  $('review-hot-btn')?.addEventListener('click', () => {
+    // Sort pending drafts by the lead's score (hottest first)
+    PENDING_DRAFTS.sort((a, b) => (b._lead_score || 0) - (a._lead_score || 0));
+    draftFilter = '';
+    $$('#draft-tabs .tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+    switchView('approvals');
+    renderDrafts();
+    toast('Drafts sorted — hottest leads first');
   });
 }
 
@@ -1652,6 +1719,7 @@ function renderAll() {
   renderConvList();
   renderConvThread();
   renderDrafts();
+  renderActivity();
   renderFunnel();
   renderSourceChart();
   renderHistogram();
@@ -1669,6 +1737,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireOverviewTabs();
   wireLeadsTabs();
   wireLeadsView();
+  wireApprovals();
 
   // Inbox — default to first escalated thread (shows ARIA→human handoff)
   const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
@@ -1710,6 +1779,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(async () => {
     await loadLiveData();
     renderDrafts();
+    renderActivity();
     renderKPIs();
     renderCopilot();
     renderMiniCards();

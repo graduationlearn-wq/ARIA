@@ -161,6 +161,39 @@ class TestApprovalQueue:
         assert isinstance(draft["lead_score"], int)
 
 
+# ── /approval/stats ───────────────────────────────────────────────────────────
+
+class TestApprovalStats:
+
+    def _post_lead(self, client):
+        with patch("routes.webhook.send_email", return_value=True), \
+             patch("config.settings.human_approval_mode", True):
+            return client.post("/webhook/lead", json=BROKER_PAYLOAD).json()
+
+    def test_stats_shape(self, client):
+        resp = client.get("/approval/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "stats" in data and "activity" in data
+        for k in ("pending", "approved_today", "rejected", "sent_total"):
+            assert k in data["stats"] and isinstance(data["stats"][k], int)
+        assert isinstance(data["activity"], list)
+
+    def test_pending_count_reflects_queue(self, client):
+        self._post_lead(client)
+        data = client.get("/approval/stats").json()
+        assert data["stats"]["pending"] == 1
+
+    def test_approved_appears_in_activity(self, client):
+        self._post_lead(client)
+        draft_id = client.get("/approval/queue").json()["drafts"][0]["draft_id"]
+        with patch("routes.approval.send_email", return_value=True):
+            client.post(f"/approval/{draft_id}/approve")
+        data = client.get("/approval/stats").json()
+        assert data["stats"]["sent_total"] >= 1
+        assert any(a["action"] == "Approved" for a in data["activity"])
+
+
 # ── /approval/{id}/approve ────────────────────────────────────────────────────
 
 class TestApprovalApprove:
