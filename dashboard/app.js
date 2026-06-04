@@ -329,6 +329,15 @@ async function loadConvMessages(convIdx) {
     if (!r.ok) { c.messages = []; return; }
     const { lead, interactions } = await r.json();
 
+    // Enrich the conversation's lead with detail fields for the header tools
+    if (lead) {
+      c.lead.phone = lead.phone;
+      c.lead.email = lead.email;
+      c.lead.human_priority = lead.human_priority;
+      c.lead.score = lead.score;
+      c.lead.quality = lead.quality;
+    }
+
     c.messages = interactions.map(i => {
       const t = i.timestamp
         ? new Date(i.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
@@ -871,12 +880,15 @@ async function sendHumanReply(c, input, sendBtn) {
 
 /* ══════════════════════ INBOX VIEW ══════════════════════ */
 let activeConv = 0;
-let convFilter = 'all';   // 'all' | 'aria' | 'team'
+let convFilter = 'all';       // 'all' | 'aria' | 'team'
+let convPlatform = 'all';     // 'all' | 'facebook' | 'instagram'
 
 function filteredConvs() {
-  if (convFilter === 'aria') return CONVERSATIONS.filter(c => !c.escalated);
-  if (convFilter === 'team') return CONVERSATIONS.filter(c => c.escalated);
-  return CONVERSATIONS;
+  let list = CONVERSATIONS;
+  if (convFilter === 'aria') list = list.filter(c => !c.escalated);
+  else if (convFilter === 'team') list = list.filter(c => c.escalated);
+  if (convPlatform !== 'all') list = list.filter(c => c.lead.channel === convPlatform);
+  return list;
 }
 
 function renderConvList() {
@@ -939,12 +951,37 @@ function wireConvFilters() {
       renderConvList();
     });
   });
+
+  // Platform dropdown cycles All → Facebook → Instagram
+  const PLATS = ['all', 'facebook', 'instagram'];
+  const PLAT_LBL = { all: 'All platforms', facebook: 'Facebook', instagram: 'Instagram' };
+  $('conv-platform-btn')?.addEventListener('click', () => {
+    const i = PLATS.indexOf(convPlatform);
+    convPlatform = PLATS[(i + 1) % PLATS.length];
+    const btn = $('conv-platform-btn');
+    btn.childNodes[0].nodeValue = PLAT_LBL[convPlatform] + ' ';
+    renderConvList();
+  });
+}
+
+/** Toggle a lead's human-priority flag via the API (used from the Inbox header) */
+async function togglePriority(c) {
+  try {
+    const r = await fetch(`/leads/${c.lead_id}/priority`, { method: 'POST' });
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    c.lead.human_priority = d.human_priority;
+    renderConvThread();
+    toast(d.message || (d.human_priority ? 'Flagged as priority' : 'Priority cleared'));
+  } catch { toast('Could not update priority', true); }
 }
 
 function renderConvThread() {
   const c = CONVERSATIONS[activeConv];
   if (!c) return;
 
+  const phone = c.lead.phone;
+  const starred = !!c.lead.human_priority;
   $('conv-head').innerHTML = `
     <div class="ch-avatar"><img src="${c.lead.avatar}" alt=""></div>
     <div>
@@ -952,11 +989,12 @@ function renderConvThread() {
       <div class="ch-meta">${esc(c.lead.city)} · Local time ${new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})}</div>
     </div>
     <div class="ch-tools">
-      <button class="icon-btn sm" title="Call">${ICONS.phone}</button>
-      <button class="icon-btn sm" title="Save">${ICONS.star}</button>
-      <button class="icon-btn sm">${ICONS.more}</button>
+      <button class="icon-btn sm" id="ch-call" title="${phone ? 'Call ' + esc(phone) : 'No phone on file'}" ${phone ? '' : 'disabled'}>${ICONS.phone}</button>
+      <button class="icon-btn sm ${starred ? 'starred' : ''}" id="ch-star" title="${starred ? 'Priority — click to clear' : 'Flag as priority'}">${ICONS.star}</button>
     </div>
   `;
+  if (phone) $('ch-call')?.addEventListener('click', () => { window.location.href = 'tel:' + phone; });
+  $('ch-star')?.addEventListener('click', () => togglePriority(c));
 
   // Lazy-load messages when this conversation hasn't been opened yet
   if (c.messages === null) {

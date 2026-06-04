@@ -1287,6 +1287,10 @@ body {
 .view.active .kpi:nth-child(3) { animation-delay: .11s; }
 .view.active .kpi:nth-child(4) { animation-delay: .15s; }
 
+/* Priority star (Inbox header) */
+.icon-btn.starred { color: var(--amber); }
+.icon-btn.starred svg { fill: var(--amber); }
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━ INBOX COMPOSER STATES ━━━━━━━━━━━━━━━ */
 /* Disabled — ARIA is handling */
 .conv-input input:disabled {
