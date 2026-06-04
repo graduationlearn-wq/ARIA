@@ -17,8 +17,47 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.knowledge_base import KnowledgeBase
+from config import settings
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+# ── Config / system status (no secrets) ─────────────────────────────────────────
+
+@router.get("/config")
+def get_config(db: Session = Depends(get_db)):
+    """
+    Non-sensitive system configuration + KB stats for the Settings page.
+    Never returns API keys or SMTP passwords — only presence flags.
+    """
+    kb_total        = db.query(KnowledgeBase).count()
+    kb_placeholders = db.query(KnowledgeBase).filter(KnowledgeBase.is_placeholder == True).count()  # noqa: E712
+    kb_active       = db.query(KnowledgeBase).filter(KnowledgeBase.active == True).count()           # noqa: E712
+
+    return {
+        "aria": {
+            "human_approval_mode": settings.human_approval_mode,
+            "llm_provider":        settings.llm_provider,
+            "base_url":            settings.base_url,
+            "version":             "0.6 - Phase 2",
+        },
+        "channels": {
+            "facebook":  {"label": "Facebook Lead Ads", "connected": False, "note": "Connect webhook in Meta Business Suite"},
+            "instagram": {"label": "Instagram Lead Ads", "connected": False, "note": "Shares the Meta webhook with Facebook"},
+            "email":     {"label": "Email (SMTP)", "connected": bool(settings.smtp_user and settings.smtp_password), "note": "Outbound first-touch & follow-ups"},
+            "whatsapp":  {"label": "WhatsApp Cloud API", "connected": bool(settings.whatsapp_api_token and settings.whatsapp_phone_number_id), "note": "Team adds credentials when ready"},
+        },
+        "alerts": {
+            "alert_email":      settings.alert_email or "(not set)",
+            "whatsapp_number":  settings.whatsapp_business_number or "(not set)",
+        },
+        "knowledge_base": {
+            "total":        kb_total,
+            "active":       kb_active,
+            "placeholders": kb_placeholders,
+            "answered":     kb_total - kb_placeholders,
+        },
+    }
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────

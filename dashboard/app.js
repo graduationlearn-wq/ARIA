@@ -1149,6 +1149,341 @@ function renderLeadsSub() {
 function renderMe() {
   const img = $('me-avatar');
   if (img) img.src = ME.avatar;
+  if ($('avatar-menu-img'))  $('avatar-menu-img').src = ME.avatar;
+  if ($('avatar-menu-name')) $('avatar-menu-name').textContent = ME.name;
+  if ($('avatar-menu-role')) $('avatar-menu-role').textContent = ME.email || 'BeyondSure team';
+}
+
+/* ══════════════════════ PHASE 1: TOPBAR ══════════════════════ */
+
+let CONFIG = null;          // cached /admin/config
+let notifsRead = false;     // whether the user dismissed the notification dot
+
+/** Fetch non-sensitive backend config (once, cached) */
+async function loadConfig() {
+  if (window.location.protocol === 'file:') return null;
+  try {
+    const r = await fetch('/admin/config');
+    if (r.ok) CONFIG = await r.json();
+  } catch (_) {}
+  return CONFIG;
+}
+
+/* ── Generic popover open/close ── */
+function closeAllPopovers(except) {
+  ['notif-panel', 'avatar-menu', 'channel-popover'].forEach(id => {
+    if (id !== except) { const el = $(id); if (el) el.hidden = true; }
+  });
+}
+function togglePopover(id) {
+  const el = $(id);
+  if (!el) return;
+  const willOpen = el.hidden;
+  closeAllPopovers(willOpen ? id : null);
+  el.hidden = !willOpen;
+}
+
+/* ── Notifications ── */
+function buildNotifications() {
+  const items = [];
+  const escalated = LEADS.filter(l => l.status === 'escalated' || l.status === 'needs_human');
+  const hot       = LEADS.filter(l => l.quality === 'hot');
+  const demos     = LEADS.filter(l => l.willing_for_demo
+    && !['converted','demo_done'].includes(l.status));
+
+  escalated.forEach(l => items.push({
+    icon: '🙋', bg: '#fce7f3',
+    title: `${l.name} asked to talk to your team`,
+    meta: 'Open the conversation in Inbox',
+    action: () => openConversationByLead(l.id),
+  }));
+  hot.forEach(l => items.push({
+    icon: '🔥', bg: '#fef3c7',
+    title: `${l.name} is hot — score ${l.score}`,
+    meta: `${TYPE_LBL[l.lead_type] || l.lead_type} · ${l.company}`,
+    action: () => openConversationByLead(l.id),
+  }));
+  if (PENDING_DRAFTS.length) items.push({
+    icon: '📝', bg: '#ede9fe',
+    title: `${PENDING_DRAFTS.length} draft${PENDING_DRAFTS.length > 1 ? 's' : ''} awaiting approval`,
+    meta: 'Review before they go out',
+    action: () => switchView('approvals'),
+  });
+  demos.forEach(l => items.push({
+    icon: '📅', bg: '#dcfce7',
+    title: `${l.name} wants a demo`,
+    meta: 'Confirm a time slot',
+    action: () => openConversationByLead(l.id),
+  }));
+  return items;
+}
+
+function renderNotifications() {
+  const items = buildNotifications();
+  const list = $('notif-list');
+  const dot  = $('notif-dot');
+  if (dot) dot.hidden = !(items.length && !notifsRead);
+
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = `<li class="notif-empty">You're all caught up 🎉<br>No actions need your attention.</li>`;
+    return;
+  }
+  list.innerHTML = items.map((it, i) => `
+    <li class="notif-item" data-ni="${i}">
+      <div class="notif-ico" style="background:${it.bg}">${it.icon}</div>
+      <div class="notif-body">
+        <div class="notif-title">${esc(it.title)}</div>
+        <div class="notif-meta">${esc(it.meta)}</div>
+      </div>
+    </li>`).join('');
+  $$('#notif-list .notif-item').forEach(el => {
+    el.addEventListener('click', () => {
+      items[+el.dataset.ni].action();
+      closeAllPopovers();
+    });
+  });
+}
+
+/* ── Channels popover ── */
+function renderChannelPopover() {
+  const host = $('channel-list');
+  if (!host || !CONFIG) return;
+  const ch = CONFIG.channels;
+  const order = ['facebook', 'instagram', 'whatsapp', 'email'];
+  host.innerHTML = order.map(k => {
+    const c = ch[k]; if (!c) return '';
+    const on = c.connected;
+    return `<div class="chan-row">
+      <span class="chan-dot ${on ? 'on' : 'off'}"></span>
+      <span class="chan-name">${esc(c.label)}</span>
+      <span class="chan-status ${on ? 'on' : 'off'}">${on ? 'Connected' : 'Not set'}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ── Global lead search ── */
+function openSearch() {
+  const ov = $('search-overlay');
+  if (!ov) return;
+  ov.hidden = false;
+  const inp = $('search-input');
+  inp.value = '';
+  renderSearchResults('');
+  setTimeout(() => inp.focus(), 30);
+}
+function closeSearch() { const ov = $('search-overlay'); if (ov) ov.hidden = true; }
+
+function renderSearchResults(q) {
+  const host = $('search-results');
+  if (!host) return;
+  const query = q.trim().toLowerCase();
+  let matches = LEADS;
+  if (query) {
+    matches = LEADS.filter(l =>
+      (l.name || '').toLowerCase().includes(query) ||
+      (l.company || '').toLowerCase().includes(query) ||
+      (l.handle || '').toLowerCase().includes(query));
+  }
+  matches = matches.slice(0, 8);
+
+  if (!matches.length) {
+    host.innerHTML = `<li class="search-empty">${query ? 'No leads match.' : 'Start typing to search your leads.'}</li>`;
+    return;
+  }
+  host.innerHTML = matches.map(l => `
+    <li class="search-result" data-lead="${l.id}">
+      <img src="${l.avatar}" alt="">
+      <div class="sr-body">
+        <div class="sr-name">${esc(l.name)}</div>
+        <div class="sr-meta">${esc(l.company)} · ${TYPE_LBL[l.lead_type] || l.lead_type} · ${esc(l.city)}</div>
+      </div>
+      <span class="sr-score" style="background:${Q_COLOR[l.quality]}22;color:${Q_COLOR[l.quality]}">${l.score}</span>
+    </li>`).join('');
+  $$('#search-results .search-result').forEach(el => {
+    el.addEventListener('click', () => {
+      openConversationByLead(+el.dataset.lead);
+      closeSearch();
+    });
+  });
+}
+
+/** Jump to a lead's conversation in the Inbox */
+function openConversationByLead(leadId) {
+  switchView('inbox');
+  const idx = CONVERSATIONS.findIndex(c => c.lead_id === leadId);
+  if (idx >= 0) {
+    activeConv = idx;
+    renderConvList();
+    renderConvThread();
+  }
+}
+
+/* ── Wire all topbar controls ── */
+function wireTopbar() {
+  $('notif-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    notifsRead = true;
+    renderNotifications();
+    togglePopover('notif-panel');
+  });
+  $('notif-clear')?.addEventListener('click', e => {
+    e.stopPropagation();
+    notifsRead = true;
+    renderNotifications();
+  });
+  $('avatar-btn')?.addEventListener('click', e => { e.stopPropagation(); togglePopover('avatar-menu'); });
+  $('channel-add-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    renderChannelPopover();
+    togglePopover('channel-popover');
+  });
+  $('channel-settings-link')?.addEventListener('click', () => { closeAllPopovers(); openSettings('channels'); });
+
+  // Avatar menu actions
+  $$('#avatar-menu .menu-item').forEach(mi => {
+    mi.addEventListener('click', () => {
+      const a = mi.dataset.action;
+      closeAllPopovers();
+      if (a === 'settings') openSettings('knowledge');
+      else if (a === 'kb')  window.open('/admin/kb', '_blank');
+      else if (a === 'docs') openSettings('docs');
+      else if (a === 'signout') alert('Sign-out is a placeholder — auth is added at deployment.');
+    });
+  });
+
+  // Settings button
+  $('settings-btn')?.addEventListener('click', () => openSettings('knowledge'));
+
+  // Search
+  $('search-btn')?.addEventListener('click', openSearch);
+  $('search-input')?.addEventListener('input', e => renderSearchResults(e.target.value));
+  $('search-overlay')?.addEventListener('click', e => { if (e.target.id === 'search-overlay') closeSearch(); });
+
+  // Global keyboard: Ctrl/Cmd+K opens search, Esc closes overlays
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
+    if (e.key === 'Escape') { closeSearch(); closeAllPopovers(); }
+  });
+
+  // Click-away closes popovers
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.popover-anchor')) closeAllPopovers();
+  });
+
+  // Settings sub-nav tabs
+  $$('#settings-nav .set-tab').forEach(tab => {
+    tab.addEventListener('click', () => showSettingsSection(tab.dataset.sec));
+  });
+}
+
+/* ══════════════════════ SETTINGS PAGE ══════════════════════ */
+function openSettings(section) {
+  switchView('settings');
+  if (section) showSettingsSection(section);
+  renderSettings();
+}
+
+function showSettingsSection(sec) {
+  $$('#settings-nav .set-tab').forEach(t => t.classList.toggle('active', t.dataset.sec === sec));
+  $$('.set-section').forEach(s => s.classList.toggle('active', s.id === `set-${sec}`));
+}
+
+async function renderSettings() {
+  if (!CONFIG) await loadConfig();
+
+  // Knowledge Base
+  if (CONFIG?.knowledge_base) {
+    const kb = CONFIG.knowledge_base;
+    const stats = $('kb-stats');
+    if (stats) stats.innerHTML = [
+      ['Total', kb.total], ['Answered', kb.answered],
+      ['Placeholders', kb.placeholders], ['Active', kb.active],
+    ].map(([l, v]) => `<div class="kb-stat"><div class="kb-stat-val">${v}</div><div class="kb-stat-lbl">${l}</div></div>`).join('');
+    const pct = kb.total ? Math.round((kb.answered / kb.total) * 100) : 0;
+    if ($('kb-progress-fill')) $('kb-progress-fill').style.width = pct + '%';
+    if ($('kb-progress-lbl'))  $('kb-progress-lbl').textContent = `${pct}% answered · ${kb.placeholders} placeholder${kb.placeholders !== 1 ? 's' : ''} left`;
+  }
+
+  // Channels
+  if (CONFIG?.channels) {
+    const ICO = {
+      facebook:  { bg: '#1877f2', t: 'f' },
+      instagram: { bg: 'linear-gradient(135deg,#f09433,#dc2743,#bc1888)', t: '◉' },
+      whatsapp:  { bg: '#25d366', t: '✆' },
+      email:     { bg: '#6c5ce7', t: '✉' },
+    };
+    $('channel-grid').innerHTML = ['facebook','instagram','whatsapp','email'].map(k => {
+      const c = CONFIG.channels[k]; if (!c) return '';
+      const ic = ICO[k];
+      return `<div class="chan-card">
+        <div class="chan-card-ico" style="background:${ic.bg}">${ic.t}</div>
+        <div class="chan-card-body">
+          <div class="chan-card-name">${esc(c.label)}</div>
+          <div class="chan-card-note">${esc(c.note)}</div>
+        </div>
+        <span class="chan-pill ${c.connected ? 'on' : 'off'}">${c.connected ? 'Connected' : 'Pending'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ARIA behaviour
+  if (CONFIG?.aria) {
+    const a = CONFIG.aria;
+    const rows = [
+      ['Human approval mode', 'Every message waits for a team member to approve before sending.',
+        a.human_approval_mode ? `<span class="pill-on">ON</span>` : `<span class="pill-off">OFF</span>`],
+      ['LLM provider', 'Which model drafts replies and chat responses.', a.llm_provider],
+      ['Base URL', 'Used to build chat links in outbound emails.', a.base_url],
+      ['Alert email', 'Where hot-lead dossiers are sent.', CONFIG.alerts.alert_email],
+      ['WhatsApp alert number', 'Team number for internal hot-lead pings.', CONFIG.alerts.whatsapp_number],
+    ];
+    $('behavior-list').innerHTML = rows.map(([n, d, v]) => `
+      <div class="behavior-row">
+        <div class="behavior-info"><div class="behavior-name">${n}</div><div class="behavior-desc">${d}</div></div>
+        <div class="behavior-val">${v}</div>
+      </div>`).join('');
+  }
+
+  // Team
+  const tg = $('team-grid');
+  if (tg && typeof TEAM === 'object') {
+    tg.innerHTML = Object.values(TEAM).map(m => `
+      <div class="team-card">
+        <img src="${m.avatar}" alt="">
+        <div><div class="team-card-name">${esc(m.name)}</div><div class="team-card-role">${esc(m.role)}</div></div>
+      </div>`).join('');
+  }
+
+  // Docs
+  const dg = $('docs-grid');
+  if (dg) dg.innerHTML = [
+    ['How leads are scored', 'Profile (40) + form intent (30) + engagement (30) = 0–100. Hot ≥70, Warm 40–69, Cold 10–39.'],
+    ['The approval queue', 'ARIA drafts every message. Nothing reaches a lead until a team member approves it in the Approvals tab.'],
+    ['Chat → human handoff', 'When a lead asks for a person, the chat escalates and the full thread appears in Inbox for you to take over.'],
+    ['Follow-ups', 'ARIA auto-nudges quiet leads at 24h, 72h and 7 days, then re-engages "maybe later" leads — all via the approval queue.'],
+    ['Knowledge Base', 'ARIA only quotes facts from the KB. Keep pricing and feature answers current in the KB Editor.'],
+    ['Compliance scrub', 'Every AI reply is filtered for invented prices, date promises and guarantees before it is shown to you.'],
+  ].map(([h, p]) => `<div class="doc-card"><h3>${h}</h3><p>${p}</p></div>`).join('');
+
+  // System
+  const sl = $('system-list');
+  if (sl && CONFIG?.aria) {
+    let sched = '—';
+    try { const r = await fetch('/scheduler/status'); if (r.ok) { const s = await r.json(); sched = s.running || s.status ? 'Running' : 'Stopped'; } } catch (_) {}
+    const rows = [
+      ['Backend', 'running', 'Live'],
+      ['Scheduler', 'Follow-up jobs (hourly, IST)', sched],
+      ['Version', 'ARIA build', CONFIG.aria.version],
+      ['Total leads', 'In the database', String(LEADS.length)],
+      ['Pending approvals', 'Drafts awaiting review', String(PENDING_DRAFTS.length)],
+    ];
+    sl.innerHTML = rows.map(([n, d, v]) => `
+      <div class="system-row">
+        <div class="behavior-info"><div class="system-name">${n}</div><div class="behavior-desc">${d}</div></div>
+        <div class="system-val">${v}</div>
+      </div>`).join('');
+  }
 }
 
 /* ══════════════════════ RE-RENDER ALL ══════════════════════ */
@@ -1171,12 +1506,14 @@ function renderAll() {
   renderWeekly();
   renderCohorts();
   renderTopPerformers();
+  renderNotifications();
 }
 
 /* ══════════════════════ BOOT ══════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   renderMe();
   wireNav();
+  wireTopbar();
   wireOverviewTabs();
   wireLeadsTabs();
 
@@ -1188,8 +1525,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 1. Render immediately with sample data (instant visual — no blank flash)
   renderAll();
 
-  // 2. Load live data from the API, then re-render with real numbers
-  await loadLiveData();
+  // 2. Load live data + config from the API, then re-render with real numbers
+  await Promise.all([loadLiveData(), loadConfig()]);
   // Live data rebuilt CONVERSATIONS — re-select a valid thread (prefer escalated)
   const liveEscalated = CONVERSATIONS.findIndex(c => c.escalated);
   activeConv = liveEscalated >= 0 ? liveEscalated : 0;

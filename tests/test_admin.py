@@ -141,6 +141,41 @@ class TestKBEntries:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Config endpoint (Settings page)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestConfig:
+
+    def test_config_returns_sections(self, client, db):
+        resp = client.get("/admin/config")
+        assert resp.status_code == 200
+        data = resp.json()
+        for key in ("aria", "channels", "alerts", "knowledge_base"):
+            assert key in data
+
+    def test_config_has_no_secrets(self, client, db):
+        """Config must never leak API keys or SMTP passwords."""
+        resp = client.get("/admin/config")
+        body = resp.text.lower()
+        assert "api_key" not in body
+        assert "password" not in body
+        assert "smtp_password" not in body
+
+    def test_config_channels_are_booleans(self, client, db):
+        resp = client.get("/admin/config")
+        channels = resp.json()["channels"]
+        for ch in channels.values():
+            assert isinstance(ch["connected"], bool)
+            assert "label" in ch and "note" in ch
+
+    def test_config_kb_counts_present(self, client, db):
+        resp = client.get("/admin/config")
+        kb = resp.json()["knowledge_base"]
+        for key in ("total", "active", "placeholders", "answered"):
+            assert key in kb and isinstance(kb[key], int)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dashboard SPA
 # ─────────────────────────────────────────────────────────────────────────────
 
