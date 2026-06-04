@@ -475,7 +475,7 @@ let overviewQ = '';
 function renderOverviewTable() {
   const rows = LEADS
     .filter(l => !overviewQ || l.quality === overviewQ)
-    .sort((a,b) => b.score - a.score)
+    .sort(SORTERS[leadsSort])
     .slice(0, 8);
 
   $('leads-body').innerHTML = rows.map(l => `
@@ -643,6 +643,24 @@ function wireDotHover(host) {
 /* ══════════════════════ LEADS VIEW ══════════════════════ */
 let leadsQ = '';
 
+/* Shared lead sort (used by both the Leads grid and the Overview table) */
+let leadsSort = 'score';
+const SORTERS = {
+  score:  (a, b) => b.score - a.score,
+  newest: (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
+  name:   (a, b) => (a.name || '').localeCompare(b.name || ''),
+};
+const SORT_ORDER = ['score', 'newest', 'name'];
+const SORT_LABEL = { score: 'highest score', newest: 'newest first', name: 'name A–Z' };
+
+function cycleLeadSort() {
+  const i = SORT_ORDER.indexOf(leadsSort);
+  leadsSort = SORT_ORDER[(i + 1) % SORT_ORDER.length];
+  renderLeadGrid();
+  renderOverviewTable();
+  toast(`Sorted by ${SORT_LABEL[leadsSort]}`);
+}
+
 function pfDotStyle(channel) {
   return channel === 'facebook' ? 'background:#1877f2' : 'background:linear-gradient(135deg,#f09433,#dc2743,#bc1888)';
 }
@@ -650,7 +668,7 @@ function pfDotStyle(channel) {
 function renderLeadGrid() {
   const cards = LEADS
     .filter(l => !leadsQ || l.quality === leadsQ)
-    .sort((a, b) => b.score - a.score)
+    .sort(SORTERS[leadsSort])
     .slice(0, 18);
 
   if (!cards.length) {
@@ -1363,7 +1381,7 @@ function wireTopbar() {
   // Global keyboard: Ctrl/Cmd+K opens search, Esc closes overlays
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
-    if (e.key === 'Escape') { closeSearch(); closeAllPopovers(); }
+    if (e.key === 'Escape') { closeSearch(); closeAllPopovers(); closeAddLead(); }
   });
 
   // Click-away closes popovers
@@ -1486,6 +1504,139 @@ async function renderSettings() {
   }
 }
 
+/* ══════════════════════ PHASE 3a: LEADS ACTIONS ══════════════════════ */
+
+let toastTimer = null;
+/** Show a transient toast message at the bottom of the screen */
+function toast(msg, bad = false) {
+  const t = $('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'toast' + (bad ? ' toast-bad' : '');
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* ── Add Lead modal ── */
+function openAddLead() {
+  const ov = $('addlead-overlay');
+  if (!ov) return;
+  $('addlead-form').reset();
+  $('addlead-error').hidden = true;
+  ov.hidden = false;
+  setTimeout(() => $('addlead-form').querySelector('input')?.focus(), 30);
+}
+function closeAddLead() { const ov = $('addlead-overlay'); if (ov) ov.hidden = true; }
+
+async function submitAddLead(e) {
+  e.preventDefault();
+  const form = $('addlead-form');
+  const btn  = $('addlead-submit');
+  const err  = $('addlead-error');
+  const payload = Object.fromEntries(new FormData(form).entries());
+
+  if (!payload.first_name?.trim() || !payload.email?.trim()) {
+    err.textContent = 'Name and email are required.';
+    err.hidden = false;
+    return;
+  }
+
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Adding…';
+  err.hidden = true;
+
+  try {
+    const r = await fetch('/webhook/lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed to add lead');
+
+    closeAddLead();
+    await loadLiveData();
+    leadsQ = ''; overviewQ = '';
+    renderAll();
+    if (data.duplicate) {
+      toast(`${data.first_name || 'Lead'} already exists — record updated`);
+    } else {
+      toast(`${data.first_name || 'Lead'} added · ${data.lead_quality} (${data.lead_score}) · draft queued`);
+    }
+  } catch (ex) {
+    err.textContent = ex.message || 'Something went wrong.';
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+/* ── Live quick-action cards (Leads aside) ── */
+function renderLeadsQuick() {
+  const host = $('leads-quick');
+  if (!host) return;
+  const pending = PENDING_DRAFTS.length;
+  const warm    = LEADS.filter(l => l.quality === 'warm').length;
+  const team    = LEADS.filter(l => l.status === 'escalated' || l.status === 'needs_human').length;
+
+  const actions = [];
+  if (pending) actions.push({
+    icon: ICONS.inbox, bg: '#ede9fe', fg: '#6d28d9',
+    label: `Review ${pending} pending draft${pending > 1 ? 's' : ''}`,
+    sub: 'Approve before they go out', goto: 'approvals',
+  });
+  if (team) actions.push({
+    icon: ICONS.handoff, bg: '#fce7f3', fg: '#be185d',
+    label: `${team} conversation${team > 1 ? 's' : ''} need the team`,
+    sub: 'Pick up where ARIA left off', goto: 'inbox',
+  });
+  actions.push({
+    icon: ICONS.flame, bg: '#fef3c7', fg: '#b45309',
+    label: warm ? `Follow up ${warm} warm lead${warm > 1 ? 's' : ''}` : 'Add your next lead',
+    sub: warm ? 'Nudge them toward a demo' : 'Grow the pipeline',
+    action: warm ? () => { switchView('leads'); setLeadsTab('warm'); } : openAddLead,
+  });
+
+  host.innerHTML = actions.map((a, i) => `
+    <button class="qa-real" data-qi="${i}">
+      <span class="qa-icon" style="background:${a.bg};color:${a.fg}">${a.icon}</span>
+      <span><span class="qa-label">${esc(a.label)}</span><span class="qa-sub">${esc(a.sub)}</span></span>
+    </button>`).join('');
+  $$('#leads-quick .qa-real').forEach(el => {
+    el.addEventListener('click', () => {
+      const a = actions[+el.dataset.qi];
+      if (a.action) a.action();
+      else if (a.goto) switchView(a.goto);
+    });
+  });
+}
+
+/** Programmatically activate a Leads quality tab */
+function setLeadsTab(q) {
+  leadsQ = q;
+  $$('#leads-view-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.q === q));
+  renderLeadGrid();
+}
+
+/* ── Wire Leads-view + Overview controls ── */
+function wireLeadsView() {
+  $('add-lead-btn')?.addEventListener('click', openAddLead);
+  $('addlead-close')?.addEventListener('click', closeAddLead);
+  $('addlead-cancel')?.addEventListener('click', closeAddLead);
+  $('addlead-form')?.addEventListener('submit', submitAddLead);
+  $('addlead-overlay')?.addEventListener('click', e => { if (e.target.id === 'addlead-overlay') closeAddLead(); });
+
+  $('ov-search-btn')?.addEventListener('click', openSearch);
+  $('leads-search-btn')?.addEventListener('click', openSearch);
+  $('ov-sort-btn')?.addEventListener('click', cycleLeadSort);
+  $('leads-sort-btn')?.addEventListener('click', cycleLeadSort);
+
+  $('priority-see-all')?.addEventListener('click', e => { e.preventDefault(); switchView('approvals'); });
+}
+
 /* ══════════════════════ RE-RENDER ALL ══════════════════════ */
 function renderAll() {
   renderKPIs();
@@ -1496,6 +1647,7 @@ function renderAll() {
   renderDotChart();
   renderLeadGrid();
   renderLeadsSub();
+  renderLeadsQuick();
   renderSourceMix();
   renderConvList();
   renderConvThread();
@@ -1516,6 +1668,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireTopbar();
   wireOverviewTabs();
   wireLeadsTabs();
+  wireLeadsView();
 
   // Inbox — default to first escalated thread (shows ARIA→human handoff)
   const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);

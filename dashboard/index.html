@@ -110,6 +110,76 @@
     </div>
   </header>
 
+  <!-- ━━━━━━━━━━━━━ ADD LEAD MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="addlead-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Add a lead</h2>
+        <button class="modal-close" id="addlead-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-sub">ARIA will score this lead and queue a first-touch draft for your approval.</p>
+      <form id="addlead-form" class="modal-form">
+        <div class="form-row">
+          <label>Name <span class="req">*</span><input name="first_name" required placeholder="e.g. Rajesh Sharma"></label>
+          <label>Email <span class="req">*</span><input name="email" type="email" required placeholder="name@company.com"></label>
+        </div>
+        <div class="form-row">
+          <label>Phone<input name="phone" placeholder="+91…"></label>
+          <label>State<input name="state" placeholder="e.g. Maharashtra"></label>
+        </div>
+        <div class="form-row">
+          <label>Company<input name="company_name" placeholder="Company name"></label>
+          <label>Business type
+            <select name="types_of_business">
+              <option value="broker">Broker</option>
+              <option value="agent">Agent</option>
+              <option value="imf">IMF</option>
+              <option value="posp_advisor">POSP Advisor</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Source
+            <select name="platform">
+              <option value="fb">Facebook</option>
+              <option value="ig">Instagram</option>
+            </select>
+          </label>
+          <label>Open to a new platform?
+            <select name="are_you_open_to_adopting_a_new_technology_platform">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Currently uses software?
+            <select name="do_you_currently_use_any_software">
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+          <label>Willing to evaluate / demo?
+            <select name="would_you_be_willing_to_evaluate_a_new_tech_solution">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn-ghost" id="addlead-cancel">Cancel</button>
+          <button type="submit" class="primary-btn" id="addlead-submit">Add lead &amp; queue draft</button>
+        </div>
+        <div class="modal-error" id="addlead-error" hidden></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div class="toast" id="toast" hidden></div>
+
   <!-- ━━━━━━━━━━━━━ SEARCH OVERLAY ━━━━━━━━━━━━━ -->
   <div class="search-overlay" id="search-overlay" hidden>
     <div class="search-box">
@@ -193,8 +263,8 @@
             <div class="card-head">
               <h2 class="card-title">Recent leads</h2>
               <div class="head-tools">
-                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
-                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+                <button class="icon-btn sm" id="ov-search-btn" title="Search leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+                <button class="icon-btn sm" id="ov-sort-btn" title="Sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
               </div>
             </div>
             <div class="tabs" id="lead-tabs">
@@ -215,7 +285,7 @@
 
         <aside class="col-right">
           <div class="card priority-card">
-            <div class="card-head"><h2 class="card-title">Priority actions</h2><a href="#" class="see-all">See all</a></div>
+            <div class="card-head"><h2 class="card-title">Priority actions</h2><a href="#" class="see-all" id="priority-see-all">See all</a></div>
             <ul class="priority-list" id="priority-list"></ul>
           </div>
 
@@ -279,9 +349,9 @@
                 <div class="card-sub" id="leads-card-sub">—</div>
               </div>
               <div class="head-tools">
-                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
-                <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
-                <button class="primary-btn">
+                <button class="icon-btn sm" id="leads-search-btn" title="Search leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+                <button class="icon-btn sm" id="leads-sort-btn" title="Sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+                <button class="primary-btn" id="add-lead-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
                   Add lead
                 </button>
@@ -310,16 +380,9 @@
               <div class="aria-mascot small">
                 <svg viewBox="0 0 64 64"><defs><linearGradient id="ag2" x1="0" x2="1" y1="0" y2="1"><stop offset="0%" stop-color="#a78bfa"/><stop offset="100%" stop-color="#6c5ce7"/></linearGradient></defs><circle cx="32" cy="34" r="22" fill="url(#ag2)"/><circle cx="25" cy="30" r="2.5" fill="#fff"/><circle cx="39" cy="30" r="2.5" fill="#fff"/><path d="M24 40 Q32 45 40 40" stroke="#fff" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>
               </div>
-              <div><div class="hi-text">Quick action</div><h2 class="aria-q">Find new clients</h2></div>
+              <div><div class="hi-text">Quick actions</div><h2 class="aria-q">What needs you</h2></div>
             </div>
-            <button class="qa qa-wide">
-              <div class="qa-icon" style="background:#ede9fe;color:#6d28d9"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
-              <div><span class="qa-label">Improve relationships</span><span class="qa-sub">Reach out to 3 silent warm leads</span></div>
-            </button>
-            <button class="qa qa-wide">
-              <div class="qa-icon" style="background:#dcfce7;color:#16a34a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 3.13a4 4 0 0 1 0 7.75M22 21v-2a4 4 0 0 0-3-3.87"/></svg></div>
-              <div><span class="qa-label">Find new clients</span><span class="qa-sub">ARIA found 12 lookalike brokers</span></div>
-            </button>
+            <div id="leads-quick"></div>
           </div>
         </aside>
       </div>
