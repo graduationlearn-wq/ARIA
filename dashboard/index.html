@@ -202,19 +202,19 @@
           <!-- KPI ROW -->
           <div class="kpi-row">
             <div class="kpi">
-              <div class="kpi-top"><span class="kpi-label">Leads</span><span class="chip chip-up">+4</span></div>
+              <div class="kpi-top"><span class="kpi-label">Leads</span><span class="chip chip-up" id="kpi-leads-chip" hidden></span></div>
               <div class="kpi-value" id="kpi-leads">—</div>
-              <div class="kpi-sub">vs 52 last month</div>
+              <div class="kpi-sub" id="kpi-leads-sub">total in pipeline</div>
             </div>
             <div class="kpi kpi-feature">
-              <div class="kpi-top"><span class="kpi-label">Hot pipeline</span><span class="chip chip-down">−8%</span></div>
-              <div class="kpi-value">₹24.8L</div>
-              <div class="kpi-sub">vs ₹27.2L last month</div>
+              <div class="kpi-top"><span class="kpi-label">Hot pipeline</span><span class="chip chip-flat" id="kpi-pipeline-chip" hidden></span></div>
+              <div class="kpi-value" id="kpi-pipeline">—</div>
+              <div class="kpi-sub" id="kpi-pipeline-sub">estimated value</div>
             </div>
             <div class="kpi">
-              <div class="kpi-top"><span class="kpi-label">Demos</span><span class="chip chip-up">+6</span></div>
+              <div class="kpi-top"><span class="kpi-label">Demos</span><span class="chip chip-up" id="kpi-demos-chip" hidden></span></div>
               <div class="kpi-value" id="kpi-demos">—</div>
-              <div class="kpi-sub">vs 12 last month</div>
+              <div class="kpi-sub" id="kpi-demos-sub">demo-ready leads</div>
             </div>
           </div>
 
@@ -231,11 +231,11 @@
                   <span class="leg"><span class="leg-sw leg-dashed"></span>Forecast</span>
                 </div>
               </div>
-              <div class="controls">
-                <button class="seg-btn active">Day</button>
-                <button class="seg-btn">Week</button>
-                <button class="seg-btn">Month</button>
-                <button class="icon-btn sm" title="Export">
+              <div class="controls" id="chart-controls">
+                <button class="seg-btn active" data-mode="day">Day</button>
+                <button class="seg-btn" data-mode="week">Week</button>
+                <button class="seg-btn" data-mode="month">Month</button>
+                <button class="icon-btn sm" id="chart-export-btn" title="Export leads as CSV">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                 </button>
               </div>
@@ -247,9 +247,9 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
                 </div>
                 <p>Brokers reply <b>2.4× faster</b> when ARIA's first message arrives before 11am IST. Try shifting morning sends.</p>
-                <button class="primary-btn">
+                <button class="primary-btn" id="run-analysis-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  Run analysis
+                  View analytics
                 </button>
               </div>
               <div class="dot-chart" id="dot-chart">
@@ -491,23 +491,23 @@
           <div class="ana-kpis">
             <div class="card stat-card">
               <span class="stat-lbl">Pipeline value</span>
-              <span class="stat-val">₹24.8L</span>
-              <span class="stat-sub stat-bad">−8% MoM</span>
+              <span class="stat-val" id="ana-pipeline">—</span>
+              <span class="stat-sub">estimated total</span>
             </div>
             <div class="card stat-card">
-              <span class="stat-lbl">Conversion rate</span>
-              <span class="stat-val">10.7%</span>
-              <span class="stat-sub stat-good">+2.4 pp</span>
+              <span class="stat-lbl">Hot leads</span>
+              <span class="stat-val" id="ana-hotpct">—</span>
+              <span class="stat-sub">of all leads</span>
             </div>
             <div class="card stat-card">
-              <span class="stat-lbl">Reply rate</span>
-              <span class="stat-val">53%</span>
-              <span class="stat-sub stat-good">+6 pp</span>
+              <span class="stat-lbl">Demo interest</span>
+              <span class="stat-val" id="ana-demopct">—</span>
+              <span class="stat-sub">want a demo</span>
             </div>
             <div class="card stat-card">
-              <span class="stat-lbl">CAC</span>
-              <span class="stat-val">₹2,840</span>
-              <span class="stat-sub">~steady</span>
+              <span class="stat-lbl">Avg score</span>
+              <span class="stat-val" id="ana-avgscore">—</span>
+              <span class="stat-sub">across pipeline</span>
             </div>
           </div>
 
@@ -546,12 +546,8 @@
 
         <aside class="col-right">
           <div class="card insight-card">
-            <div class="card-head"><h2 class="card-title">ARIA insights</h2><span class="chip chip-flat">3 new</span></div>
-            <ul class="insight-list">
-              <li><div class="ins-icon" style="background:#fef3c7;color:#b45309"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg></div><div><div class="ins-title">Friday demos convert 38% better than Wednesdays.</div><div class="ins-sub">Last 8 weeks · 14 vs 21 demos</div></div></li>
-              <li><div class="ins-icon" style="background:#dcfce7;color:#16a34a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div><div><div class="ins-title">Score ≥75 leads close 4.2× faster.</div><div class="ins-sub">Prioritise outreach to top-quartile.</div></div></li>
-              <li><div class="ins-icon" style="background:#ede9fe;color:#6d28d9"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div><div class="ins-title">Replies dip 41% after 7pm IST.</div><div class="ins-sub">Lock the IST send window 9am–9pm.</div></div></li>
-            </ul>
+            <div class="card-head"><h2 class="card-title">ARIA insights</h2><span class="chip chip-flat" id="insight-count">—</span></div>
+            <ul class="insight-list" id="insight-list"></ul>
           </div>
 
           <div class="card">

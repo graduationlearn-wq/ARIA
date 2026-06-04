@@ -408,11 +408,31 @@ function wireNav() {
 }
 
 /* ══════════════════════ OVERVIEW : KPI counters ══════════════════════ */
+function newThisWeek() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 7);
+  return LEADS.filter(l => l.created_at && new Date(l.created_at) >= cutoff).length;
+}
+
 function renderKPIs() {
   const total = LEADS.length;
-  const demos = LEADS.filter(l => ['demo_scheduled','demo_done','converted'].includes(l.status)).length;
+  const demos = LEADS.filter(l => l.willing_for_demo
+    || ['demo_scheduled','demo_done','converted'].includes(l.status)).length;
   animate($('kpi-leads'), total);
   animate($('kpi-demos'), demos);
+
+  // Hot pipeline value (sum of estimated pipeline across hot leads)
+  const hotLeads    = LEADS.filter(l => l.quality === 'hot');
+  const hotPipeline = hotLeads.reduce((s, l) => s + (l.pipeline || 0), 0);
+  if ($('kpi-pipeline'))     $('kpi-pipeline').textContent     = hotPipeline ? fmtMoney(hotPipeline) : '₹0';
+  if ($('kpi-pipeline-sub')) $('kpi-pipeline-sub').textContent = `${hotLeads.length} hot lead${hotLeads.length !== 1 ? 's' : ''}`;
+
+  // "New this week" chip on the Leads card
+  const wk = newThisWeek();
+  const chip = $('kpi-leads-chip');
+  if (chip) { chip.hidden = wk === 0; chip.textContent = `+${wk} this wk`; }
+  if ($('kpi-leads-sub')) $('kpi-leads-sub').textContent = `${total} total in pipeline`;
+  if ($('kpi-demos-sub')) $('kpi-demos-sub').textContent = 'demo-ready leads';
 }
 function animate(el, target, ms = 900) {
   if (!el) return;
@@ -522,6 +542,41 @@ function wireOverviewTabs() {
 
 /* ══════════════════════ OVERVIEW : DOT CHART (with tooltips) ══════════════════════ */
 let chartLayout = null;  // saved layout for tooltip positioning
+let chartMode = 'day';   // 'day' | 'week' | 'month'
+
+/** Bucket leads into time columns for the current chart mode */
+function buildChartBuckets(mode) {
+  const now = new Date();
+  const buckets = [];
+  const inDay = (l, key) => l.created_at === key;
+
+  if (mode === 'week') {
+    for (let i = 11; i >= 0; i--) {
+      const end = new Date(now); end.setDate(now.getDate() - i * 7); end.setHours(23,59,59,999);
+      const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0,0,0,0);
+      const leads = LEADS.filter(l => { const d = new Date(l.created_at); return d >= start && d <= end; })
+        .sort((a, b) => b.score - a.score);
+      buckets.push({ leads, label: `${MONTHS[start.getMonth()]} ${start.getDate()}`, isLast: i === 0 });
+    }
+  } else if (mode === 'month') {
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const leads = LEADS.filter(l => {
+        const d = new Date(l.created_at);
+        return d.getFullYear() === dt.getFullYear() && d.getMonth() === dt.getMonth();
+      }).sort((a, b) => b.score - a.score);
+      buckets.push({ leads, label: MONTHS[dt.getMonth()], isLast: i === 0 });
+    }
+  } else { // day — last 28 days
+    for (let i = 27; i >= 0; i--) {
+      const dt = new Date(now); dt.setDate(now.getDate() - i);
+      const key = dt.toISOString().split('T')[0];
+      const leads = LEADS.filter(l => inDay(l, key)).sort((a, b) => b.score - a.score);
+      buckets.push({ leads, label: `${MONTHS[dt.getMonth()]} ${dt.getDate()}`, isLast: i === 0 });
+    }
+  }
+  return buckets;
+}
 
 function renderDotChart() {
   const host = $('dot-chart');
@@ -531,19 +586,8 @@ function renderDotChart() {
   const chartW = W - PAD.l - PAD.r;
   const chartH = H - PAD.t - PAD.b;
 
-  // group leads by day — last 28 days from today (dynamic, not hardcoded to May)
-  const todayDt = new Date();
-  const days = [];
-  for (let i = 27; i >= 0; i--) {
-    const dt = new Date(todayDt);
-    dt.setDate(todayDt.getDate() - i);
-    const key = dt.toISOString().split('T')[0];
-    const mo  = MONTHS[dt.getMonth()];
-    const day = dt.getDate();
-    const todays = LEADS.filter(l => l.created_at === key)
-      .sort((a, b) => b.score - a.score);
-    days.push({ date: key, day, month: mo, leads: todays });
-  }
+  // Build time buckets for the current chart mode (day / week / month)
+  const days = buildChartBuckets(chartMode);
 
   // Focus: today (last day in range). If it has zero leads, fall back to most recent active day.
   let focusIdx = days.length - 1;
@@ -599,13 +643,15 @@ function renderDotChart() {
     <text class="dc-pill" x="26" y="13.5" text-anchor="middle">${n} lead${n !== 1 ? 's' : ''}</text>
   </g>`;
 
-  // X-axis labels: a handful evenly + focus day labeled "Today" if it's May 28.
-  const labelIdx = new Set([0, 6, 13, focusIdx, 20]);
+  // X-axis labels — label all when few buckets (week/month), sparse for day view
+  const lastWord = { day: 'Today', week: 'This wk', month: 'This mo' }[chartMode];
+  const showAll = days.length <= 12;
+  const labelIdx = new Set([0, 6, 13, 20, focusIdx]);
   days.forEach((d, idx) => {
-    if (!labelIdx.has(idx)) return;
+    if (!showAll && !labelIdx.has(idx)) return;
     const x = PAD.l + idx * slot + slot / 2;
     const cls = idx === focusIdx ? 'dc-x-lbl active' : 'dc-x-lbl';
-    const text = idx === days.length - 1 ? 'Today' : `${d.month} ${d.day}`;
+    const text = d.isLast ? lastWord : d.label;
     svg += `<text class="${cls}" x="${x}" y="${H - 8}" text-anchor="middle">${text}</text>`;
   });
 
@@ -1105,7 +1151,96 @@ function wireApprovals() {
   });
 }
 
+/* ── Overview chart controls + CSV export ── */
+function exportLeadsCSV() {
+  if (!LEADS.length) { toast('No leads to export', true); return; }
+  const cols = ['id', 'name', 'company', 'city', 'lead_type', 'quality', 'score', 'status', 'handle'];
+  const head = ['ID', 'Name', 'Company', 'State', 'Type', 'Quality', 'Score', 'Status', 'Email'];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = LEADS.map(l => cols.map(c => q(l[c])).join(','));
+  const csv = [head.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aria-leads-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${LEADS.length} lead${LEADS.length !== 1 ? 's' : ''} to CSV`);
+}
+
+function wireOverviewChart() {
+  $$('#chart-controls .seg-btn').forEach(b => b.addEventListener('click', () => {
+    $$('#chart-controls .seg-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    chartMode = b.dataset.mode;
+    renderDotChart();
+  }));
+  $('chart-export-btn')?.addEventListener('click', exportLeadsCSV);
+  $('run-analysis-btn')?.addEventListener('click', () => switchView('analytics'));
+}
+
 /* ══════════════════════ ANALYTICS VIEW ══════════════════════ */
+function renderAnaKpis() {
+  const total = LEADS.length;
+  const denom = total || 1;
+  const pipeline = LEADS.reduce((s, l) => s + (l.pipeline || 0), 0);
+  const hot   = LEADS.filter(l => l.quality === 'hot').length;
+  const demo  = LEADS.filter(l => l.willing_for_demo).length;
+  const avg   = Math.round(LEADS.reduce((s, l) => s + (l.score || 0), 0) / denom);
+  if ($('ana-pipeline')) $('ana-pipeline').textContent = pipeline ? fmtMoney(pipeline) : '₹0';
+  if ($('ana-hotpct'))   $('ana-hotpct').textContent   = `${Math.round(hot / denom * 100)}%`;
+  if ($('ana-demopct'))  $('ana-demopct').textContent  = `${Math.round(demo / denom * 100)}%`;
+  if ($('ana-avgscore')) $('ana-avgscore').textContent = total ? avg : '—';
+}
+
+function renderInsights() {
+  const host = $('insight-list');
+  if (!host) return;
+  const total = LEADS.length;
+  const TONES = [
+    { bg: '#fef3c7', fg: '#b45309', icon: ICONS.flame },
+    { bg: '#dcfce7', fg: '#16a34a', icon: ICONS.check },
+    { bg: '#ede9fe', fg: '#6d28d9', icon: ICONS.inbox },
+    { bg: '#fce7f3', fg: '#be185d', icon: ICONS.sparkle },
+  ];
+
+  if (!total) {
+    host.innerHTML = `<li style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px;list-style:none">Insights appear once leads arrive.</li>`;
+    if ($('insight-count')) $('insight-count').textContent = '0';
+    return;
+  }
+
+  const ins = [];
+  const fb = LEADS.filter(l => l.channel === 'facebook').length;
+  const ig = LEADS.filter(l => l.channel === 'instagram').length;
+  if (fb || ig) {
+    const top = fb >= ig ? 'Facebook' : 'Instagram';
+    ins.push({ title: `${top} brings most of your leads`, sub: `${fb} from Facebook · ${ig} from Instagram` });
+  }
+  const hot = LEADS.filter(l => l.quality === 'hot').length;
+  ins.push({
+    title: `${Math.round(hot / total * 100)}% of your leads are hot`,
+    sub: hot ? `${hot} ready for priority outreach` : 'Qualify warm leads to grow this',
+  });
+  if (PENDING_DRAFTS.length) ins.push({
+    title: `${PENDING_DRAFTS.length} draft${PENDING_DRAFTS.length > 1 ? 's' : ''} awaiting approval`,
+    sub: 'Clear the queue to keep response time low',
+  });
+  const demo = LEADS.filter(l => l.willing_for_demo).length;
+  if (demo) ins.push({ title: `${demo} lead${demo > 1 ? 's' : ''} want a demo`, sub: 'Confirm time slots to move them forward' });
+
+  const shown = ins.slice(0, 4);
+  if ($('insight-count')) $('insight-count').textContent = `${shown.length} live`;
+  host.innerHTML = shown.map((it, i) => {
+    const t = TONES[i % TONES.length];
+    return `<li>
+      <div class="ins-icon" style="background:${t.bg};color:${t.fg}">${t.icon}</div>
+      <div><div class="ins-title">${esc(it.title)}</div><div class="ins-sub">${esc(it.sub)}</div></div>
+    </li>`;
+  }).join('');
+}
+
 function renderFunnel() {
   $('funnel').innerHTML = ANALYTICS.funnel.map(s => `
     <div class="funnel-row">
@@ -1720,6 +1855,8 @@ function renderAll() {
   renderConvThread();
   renderDrafts();
   renderActivity();
+  renderAnaKpis();
+  renderInsights();
   renderFunnel();
   renderSourceChart();
   renderHistogram();
@@ -1738,6 +1875,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireLeadsTabs();
   wireLeadsView();
   wireApprovals();
+  wireOverviewChart();
 
   // Inbox — default to first escalated thread (shows ARIA→human handoff)
   const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
