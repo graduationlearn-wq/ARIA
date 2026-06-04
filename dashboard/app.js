@@ -11,6 +11,9 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 /** Escape user-supplied strings before inserting into innerHTML (XSS prevention) */
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+/** Live summary stats from /leads/stats (populated by loadLiveData) */
+let LIVE_STATS = {};
+
 /* ══════════════════════════════════════════════════════════════════
    LIVE DATA LAYER
    When served from FastAPI (/ui) → same-origin fetches, no CORS needed.
@@ -27,6 +30,8 @@ function avatarUrl(name) {
 function mapApiLead(l) {
   const dateStr = l.created_at ? l.created_at.split('T')[0] : new Date().toISOString().split('T')[0];
   const t = l.type || 'agent';
+  const src = (l.source || '').toLowerCase();
+  const channel = (src === 'ig' || src === 'instagram') ? 'instagram' : 'facebook';
   return {
     id: l.id,
     name: l.name || 'Unknown',
@@ -36,7 +41,7 @@ function mapApiLead(l) {
     handle: l.email || '',
     role: t.charAt(0).toUpperCase() + t.slice(1),
     lead_type: t,
-    channel: 'facebook',   // FB/IG webhook not yet wired — default for display
+    channel,   // derived from real source_platform (fb/ig)
     score: l.score || 0,
     quality: l.quality || 'new',
     status: l.status || 'new',
@@ -58,7 +63,11 @@ function mapApiLead(l) {
 
 /** Convert /approval/queue item → dashboard PENDING_DRAFTS format */
 function mapApiDraft(d) {
-  const body  = d.draft_message || '';
+  // Trim the CTA block (the ──── divider + chat/WhatsApp links) for a clean preview
+  let body = d.draft_message || '';
+  const dividerMatch = body.search(/[─—-]{6,}/);
+  if (dividerMatch > 0) body = body.slice(0, dividerMatch).trim();
+
   const lines = body.split('\n').map(s => s.trim()).filter(Boolean);
   return {
     id:         d.draft_id,
@@ -66,7 +75,7 @@ function mapApiDraft(d) {
     intent:     d.intent_context || 'first_touch',
     subject:    lines[0] || `Message for ${d.lead_name}`,
     body:       lines.slice(1).join('\n') || body,
-    created_at: d.queued_at || new Date().toISOString(),
+    created_at: d.created_at || new Date().toISOString(),
     // keep original API fields so renderDrafts() can fall back if lead not in LEADS
     _lead_name:    d.lead_name,
     _lead_email:   d.lead_email,
@@ -108,12 +117,21 @@ async function loadLiveData() {
     const apiLeads = await leadsRes.json();
     const apiQueue = await queueRes.json();
 
+    // /approval/queue returns { total_pending, drafts: [...] } — extract the array
+    const queueDrafts = Array.isArray(apiQueue) ? apiQueue : (apiQueue.drafts || []);
+
     // Replace sample data in-place (all render fns keep their references)
     LEADS.length = 0;
     apiLeads.map(mapApiLead).forEach(l => LEADS.push(l));
 
     PENDING_DRAFTS.length = 0;
-    apiQueue.map(mapApiDraft).forEach(d => PENDING_DRAFTS.push(d));
+    queueDrafts.map(mapApiDraft).forEach(d => PENDING_DRAFTS.push(d));
+
+    // Capture summary stats for mini-cards
+    LIVE_STATS = {
+      avgResponseMin: stats.avg_first_response_minutes,
+      byQuality: stats.by_quality || {},
+    };
 
     // Update co-pilot with real operational numbers
     OPERATING_STATUS.monitoring = LEADS.length;
@@ -219,35 +237,33 @@ async function loadLiveData() {
         cta: 'View', goto: 'overview',
       }];
 
-    // Build Inbox conversations from leads that have had any interaction.
-    // Sort by most-recently active first; limit to 25.
+    // Build Inbox conversations from every lead — in a CRM each lead is a thread.
+    // Sort most-recently-active first (leads with no activity sink to the bottom).
     const convLeads = [...LEADS]
-      .filter(l => l.last_activity_min !== null)
-      .sort((a, b) => (a.last_activity_min ?? 99999) - (b.last_activity_min ?? 99999))
+      .sort((a, b) => (a.last_activity_min ?? 1e9) - (b.last_activity_min ?? 1e9))
       .slice(0, 25);
 
-    if (convLeads.length > 0) {
-      CONVERSATIONS.length = 0;
-      convLeads.forEach(l => CONVERSATIONS.push({
-        lead_id: l.id,
-        unread:  0,
-        last_at: relTime(l.last_activity_min),
-        escalated: l.status === 'escalated' || l.status === 'needs_human',
-        handoff_at: null,
-        handed_to:  null,
-        preview: l.current_intent
-          ? l.current_intent.replace(/_/g, ' ')
-          : `${l.quality} · score ${l.score}`,
-        lead: {
-          id:      l.id,
-          name:    l.name,
-          city:    l.city,
-          channel: l.channel,
-          avatar:  l.avatar,
-        },
-        messages: null,   // lazy-loaded on first click
-      }));
-    }
+    // Always rebuild live (never keep sample conversations when served from the server)
+    CONVERSATIONS.length = 0;
+    convLeads.forEach(l => CONVERSATIONS.push({
+      lead_id: l.id,
+      unread:  0,
+      last_at: l.last_activity_min !== null ? relTime(l.last_activity_min) : 'new',
+      escalated: l.status === 'escalated' || l.status === 'needs_human',
+      handoff_at: null,
+      handed_to:  null,
+      preview: l.current_intent
+        ? l.current_intent.replace(/_/g, ' ')
+        : `${l.quality} · score ${l.score}`,
+      lead: {
+        id:      l.id,
+        name:    l.name,
+        city:    l.city,
+        channel: l.channel,
+        avatar:  l.avatar,
+      },
+      messages: null,   // lazy-loaded on first click
+    }));
 
     setLiveIndicator(true, LEADS.length);
   } catch (_) {
@@ -637,6 +653,14 @@ function renderLeadGrid() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 18);
 
+  if (!cards.length) {
+    $('lead-grid').innerHTML = `
+      <div style="grid-column:1/-1;padding:48px;text-align:center;color:var(--ink-4);font-size:13px">
+        ${leadsQ ? `No ${leadsQ} leads right now.` : 'No leads yet. New leads from Facebook/Instagram will appear here.'}
+      </div>`;
+    return;
+  }
+
   $('lead-grid').innerHTML = cards.map(l => {
     const owner = l.owner ? TEAM[l.owner] : null;
     const ownerPill = owner
@@ -790,6 +814,17 @@ function renderConvList() {
   $('cf-team').textContent = CONVERSATIONS.filter(c =>  c.escalated).length;
 
   const list = filteredConvs();
+
+  if (!list.length) {
+    $('conv-list').innerHTML = `
+      <li style="padding:40px 20px;text-align:center;color:var(--ink-4);font-size:13px;list-style:none">
+        ${convFilter === 'team' ? 'No conversations need the team yet.'
+          : convFilter === 'aria' ? 'No active ARIA conversations.'
+          : 'No conversations yet. Leads appear here once they arrive.'}
+      </li>`;
+    return;
+  }
+
   $('conv-list').innerHTML = list.map((c) => {
     const idx = CONVERSATIONS.indexOf(c);   // preserve global index for click
     const teamFlag = c.escalated
@@ -1079,6 +1114,37 @@ function renderTopPerformers() {
   `).join('');
 }
 
+/* ══════════════════════ OVERVIEW : Mini cards + Leads sub ══════════════════════ */
+function renderMiniCards() {
+  // Response time
+  const resp = $('mini-resp');
+  if (resp) {
+    const m = LIVE_STATS.avgResponseMin;
+    resp.textContent = (m === null || m === undefined) ? 'no data' : `${Math.round(m)} min`;
+  }
+
+  // Conversion: demos booked vs hot leads
+  const demos = LEADS.filter(l => l.willing_for_demo
+    || ['demo_scheduled','demo_done','converted'].includes(l.status)).length;
+  const hot   = LEADS.filter(l => l.quality === 'hot').length;
+  const pct   = LEADS.length ? Math.round((demos / LEADS.length) * 100) : 0;
+
+  if ($('mini-demos')) $('mini-demos').textContent = demos;
+  if ($('mini-hot'))   $('mini-hot').textContent   = hot;
+  if ($('mini-conv-fill'))   $('mini-conv-fill').style.width  = pct + '%';
+  if ($('mini-conv-marker')) $('mini-conv-marker').style.left = pct + '%';
+}
+
+function renderLeadsSub() {
+  const el = $('leads-card-sub');
+  if (!el) return;
+  const q = LIVE_STATS.byQuality || {};
+  const total = LEADS.length;
+  el.textContent = total
+    ? `${total} total · ${q.hot||0} hot, ${q.warm||0} warm, ${q.cold||0} cold, ${q.new||0} fresh`
+    : 'No leads yet';
+}
+
 /* ══════════════════════ ME AVATAR ══════════════════════ */
 function renderMe() {
   const img = $('me-avatar');
@@ -1090,9 +1156,11 @@ function renderAll() {
   renderKPIs();
   renderPriority();
   renderCopilot();
+  renderMiniCards();
   renderOverviewTable();
   renderDotChart();
   renderLeadGrid();
+  renderLeadsSub();
   renderSourceMix();
   renderConvList();
   renderConvThread();
@@ -1122,6 +1190,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 2. Load live data from the API, then re-render with real numbers
   await loadLiveData();
+  // Live data rebuilt CONVERSATIONS — re-select a valid thread (prefer escalated)
+  const liveEscalated = CONVERSATIONS.findIndex(c => c.escalated);
+  activeConv = liveEscalated >= 0 ? liveEscalated : 0;
   renderAll();
 
   // Refresh button
@@ -1144,11 +1215,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     rt = setTimeout(renderDotChart, 150);
   });
 
-  // Auto-refresh live data every 30 s (keeps approvals queue current)
+  // Auto-refresh live data every 30 s. Re-renders the non-disruptive views
+  // (skips renderConvThread so a team member mid-reply isn't interrupted).
   setInterval(async () => {
     await loadLiveData();
     renderDrafts();
     renderKPIs();
     renderCopilot();
+    renderMiniCards();
+    renderOverviewTable();
+    renderDotChart();
+    renderLeadGrid();
+    renderLeadsSub();
+    renderConvList();
+    renderFunnel();
+    renderSourceChart();
+    renderHistogram();
+    renderWeekly();
+    renderCohorts();
+    renderTopPerformers();
   }, 30_000);
 });

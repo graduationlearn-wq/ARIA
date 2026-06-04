@@ -84,6 +84,7 @@ def list_leads(
             "state": l.state,
             "type": l.lead_type,
             "team_size": l.team_size,
+            "source": l.source_platform,
             "score": l.lead_score,
             "quality": l.lead_quality,
             "status": l.status,

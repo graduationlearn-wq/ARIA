@@ -208,12 +208,12 @@
             <div class="card mini-card">
               <div class="mini-head"><span class="mini-title">Response time</span><svg viewBox="0 0 24 24" fill="none" stroke="#697086" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
               <div class="mini-bars"><div class="mbar" style="height:18px;background:#e5e7eb"></div><div class="mbar" style="height:32px;background:#fde68a"></div><div class="mbar" style="height:52px;background:#fbbf24"></div><div class="mbar" style="height:38px;background:#fde68a"></div><div class="mbar" style="height:24px;background:#e5e7eb"></div><div class="mbar" style="height:16px;background:#e5e7eb"></div></div>
-              <div class="mini-tag">Median <b>14 min</b> · target 10 min</div>
+              <div class="mini-tag">Median <b id="mini-resp">—</b> · target 10 min</div>
             </div>
             <div class="card mini-card">
               <div class="mini-head"><span class="mini-title">Conversion</span><svg viewBox="0 0 24 24" fill="none" stroke="#697086" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></div>
-              <div class="agree-row"><div class="agree-bar"><div class="agree-fill" style="width:64%; background:linear-gradient(90deg,#fde68a,#34d399)"></div><div class="agree-marker" style="left:64%"></div></div></div>
-              <div class="agree-stats"><div><div class="agree-num">18</div><div class="agree-lbl">Demos</div></div><div style="text-align:right"><div class="agree-num">7</div><div class="agree-lbl">Negotiating</div></div></div>
+              <div class="agree-row"><div class="agree-bar"><div class="agree-fill" id="mini-conv-fill" style="width:0%; background:linear-gradient(90deg,#fde68a,#34d399)"></div><div class="agree-marker" id="mini-conv-marker" style="left:0%"></div></div></div>
+              <div class="agree-stats"><div><div class="agree-num" id="mini-demos">0</div><div class="agree-lbl">Demos</div></div><div style="text-align:right"><div class="agree-num" id="mini-hot">0</div><div class="agree-lbl">Hot leads</div></div></div>
             </div>
           </div>
         </aside>
@@ -228,7 +228,7 @@
             <div class="card-head">
               <div>
                 <h2 class="card-title">Manage leads</h2>
-                <div class="card-sub">56 total · 10 hot, 20 warm, 16 cold, 10 fresh</div>
+                <div class="card-sub" id="leads-card-sub">—</div>
               </div>
               <div class="head-tools">
                 <button class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
