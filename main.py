@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import init_db
-from routes import webhook, leads, approval, dashboard, chat, admin
+from routes import webhook, leads, approval, chat, admin
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
@@ -44,8 +44,7 @@ async def lifespan(app: FastAPI):
     set_scheduler(_scheduler)
     print("=" * 57)
     print("  ARIA is running.")
-    print("  Dashboard (live):  http://localhost:8000/ui")
-    print("  Dashboard (legacy):http://localhost:8000/dashboard")
+    print("  Dashboard:         http://localhost:8000/ui")
     print("  Docs:              http://localhost:8000/docs")
     print("  Approval queue:    http://localhost:8000/approval/queue")
     print("  Scheduler:         http://localhost:8000/scheduler/status")
@@ -73,7 +72,6 @@ app.include_router(webhook.router)
 app.include_router(leads.router)
 app.include_router(approval.router)
 app.include_router(scheduler_route.router)
-app.include_router(dashboard.router)
 app.include_router(chat.router)
 app.include_router(admin.router)
 

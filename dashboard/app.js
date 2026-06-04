@@ -125,6 +125,100 @@ async function loadLiveData() {
       { val: PENDING_DRAFTS.length, lbl: 'Pending approvals' },
     ];
 
+    // Fetch analytics for the Analytics view
+    try {
+      const aRes = await fetch('/leads/analytics');
+      if (aRes.ok) {
+        const a = await aRes.json();
+        ANALYTICS.funnel       = a.funnel.map(s => ({ stage: s.stage, count: s.count, pct: s.pct }));
+        ANALYTICS.sources      = a.sources;
+        ANALYTICS.scoreBuckets = a.score_buckets.map(b => ({ b: b.b, n: b.n }));
+        ANALYTICS.weeklyTrend  = a.weekly_trend.map(w => ({ w: w.w, leads: w.leads, demos: w.demos }));
+        ANALYTICS.cohorts      = a.cohorts.map(c => ({
+          week: c.week, leads: c.leads, contacted: c.contacted,
+          replied: c.replied, demos: c.demos, won: c.won,
+        }));
+      }
+    } catch (_) { /* analytics unavailable — sample data stays */ }
+
+    // Derive Priority items from live leads (no extra endpoint needed)
+    const hotLeads       = LEADS.filter(l => l.quality === 'hot');
+    const escalatedLeads = LEADS.filter(l => l.status === 'escalated' || l.status === 'needs_human');
+    const demoLeads      = LEADS.filter(l => l.willing_for_demo && l.quality !== 'converted');
+    const livePriority   = [];
+
+    if (hotLeads.length)
+      livePriority.push({
+        icon: 'flame', tone: 'rose',
+        title: `${hotLeads.length} hot lead${hotLeads.length > 1 ? 's' : ''} ready`,
+        meta: 'Score 70+ — contact today',
+        desc: hotLeads.slice(0, 2).map(l => esc(l.name)).join(', ') + (hotLeads.length > 2 ? ` +${hotLeads.length - 2} more` : ''),
+        progress: `${hotLeads.length} of ${LEADS.length}`,
+      });
+
+    if (escalatedLeads.length)
+      livePriority.push({
+        icon: 'handoff', tone: 'warm',
+        title: `${escalatedLeads.length} lead${escalatedLeads.length > 1 ? 's' : ''} need team`,
+        meta: 'Human escalation requested',
+        desc: escalatedLeads.slice(0, 2).map(l => esc(l.name)).join(', '),
+        progress: '',
+      });
+
+    if (PENDING_DRAFTS.length)
+      livePriority.push({
+        icon: 'inbox', tone: 'violet',
+        title: `${PENDING_DRAFTS.length} draft${PENDING_DRAFTS.length > 1 ? 's' : ''} pending review`,
+        meta: 'Approval queue — review before sending',
+        desc: 'Click Approvals to review',
+        progress: '',
+      });
+
+    if (!livePriority.length)
+      livePriority.push({
+        icon: 'check', tone: 'mint',
+        title: 'All clear',
+        meta: 'No urgent actions right now',
+        desc: 'ARIA is handling everything',
+        progress: '',
+      });
+
+    if (livePriority.length) PRIORITY_ITEMS.splice(0, PRIORITY_ITEMS.length, ...livePriority.slice(0, 3));
+
+    // Derive Co-pilot decisions from live data
+    const liveDecisions = [];
+    if (demoLeads.length)
+      liveDecisions.push({
+        icon: 'check', tone: 'mint',
+        title: `${demoLeads.length} lead${demoLeads.length > 1 ? 's' : ''} want a demo`,
+        meta: 'Follow up to confirm time slot',
+        cta: 'Act', goto: 'leads',
+      });
+    if (PENDING_DRAFTS.length)
+      liveDecisions.push({
+        icon: 'inbox', tone: 'violet',
+        title: `${PENDING_DRAFTS.length} draft${PENDING_DRAFTS.length > 1 ? 's' : ''} waiting`,
+        meta: 'Review before they go out',
+        cta: 'Review', goto: 'approvals',
+      });
+    if (escalatedLeads.length)
+      liveDecisions.push({
+        icon: 'handoff', tone: 'rose',
+        title: `${escalatedLeads.length} need${escalatedLeads.length > 1 ? '' : 's'} human`,
+        meta: 'Asked to speak to the team',
+        cta: 'Handle', goto: 'inbox',
+      });
+
+    if (liveDecisions.length)
+      OPERATING_STATUS.decisions = liveDecisions;
+    else
+      OPERATING_STATUS.decisions = [{
+        icon: 'sparkle', tone: 'mint',
+        title: 'Nothing urgent',
+        meta: 'ARIA is running smoothly',
+        cta: 'View', goto: 'overview',
+      }];
+
     // Build Inbox conversations from leads that have had any interaction.
     // Sort by most-recently active first; limit to 25.
     const convLeads = [...LEADS]

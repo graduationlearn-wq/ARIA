@@ -8,6 +8,8 @@ Endpoints:
   POST /leads/{id}/score   — manually trigger a re-score
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -156,6 +158,109 @@ def override_status(lead_id: int, body: StatusRequest, db: Session = Depends(get
         lead.human_notes = f"[Status changed {old_status}→{body.status}: {body.reason}]"
     db.commit()
     return {"id": lead.id, "status": lead.status, "previous": old_status}
+
+
+@router.get("/analytics")
+def get_analytics(db: Session = Depends(get_db)):
+    """
+    Aggregated analytics for the dashboard Analytics view.
+    Returns funnel, source mix, score distribution, weekly trend, and cohorts.
+    """
+    leads = db.query(Lead).all()
+    total = max(len(leads), 1)
+
+    # ── Pipeline funnel ────────────────────────────────────────────────────────
+    from collections import Counter
+    status_counts = Counter(l.status or "new" for l in leads)
+
+    contacted_n = sum(status_counts.get(s, 0) for s in ["contacted", "engaged", "needs_human"])
+    demo_n      = sum(status_counts.get(s, 0) for s in ["demo_scheduled", "demo_done"])
+    converted_n = status_counts.get("converted", 0)
+
+    funnel = [
+        {"stage": "New leads",  "count": total,        "pct": 100},
+        {"stage": "Contacted",  "count": contacted_n,  "pct": round(contacted_n  / total * 100)},
+        {"stage": "Demo",       "count": demo_n,        "pct": round(demo_n       / total * 100)},
+        {"stage": "Converted",  "count": converted_n,   "pct": round(converted_n  / total * 100)},
+    ]
+
+    # ── Source mix ─────────────────────────────────────────────────────────────
+    src_counts = Counter(
+        ("facebook" if (l.source_platform or "").lower() in ("fb", "facebook") else
+         "instagram" if (l.source_platform or "").lower() in ("ig", "instagram") else
+         "other")
+        for l in leads
+    )
+    sources = [
+        {"name": "Facebook",  "count": src_counts["facebook"],  "color": "#1877f2"},
+        {"name": "Instagram", "count": src_counts["instagram"], "color": "#e1306c"},
+        {"name": "Other",     "count": src_counts["other"],     "color": "#94a3b8"},
+    ]
+
+    # ── Score distribution ─────────────────────────────────────────────────────
+    buckets = {"0–20": 0, "21–40": 0, "41–60": 0, "61–80": 0, "81–100": 0}
+    for l in leads:
+        s = l.lead_score or 0
+        if   s <= 20:  buckets["0–20"]   += 1
+        elif s <= 40:  buckets["21–40"]  += 1
+        elif s <= 60:  buckets["41–60"]  += 1
+        elif s <= 80:  buckets["61–80"]  += 1
+        else:          buckets["81–100"] += 1
+    score_buckets = [{"b": k, "n": v} for k, v in buckets.items()]
+
+    # ── Weekly trend (last 8 weeks) ────────────────────────────────────────────
+    now = datetime.now(timezone.utc)
+    weekly_trend = []
+    for i in range(7, -1, -1):
+        w_start = now - timedelta(weeks=i + 1)
+        w_end   = now - timedelta(weeks=i)
+        label   = f"W{8 - i}"
+        lead_n  = sum(
+            1 for l in leads
+            if l.created_at and w_start <= l.created_at.replace(tzinfo=timezone.utc) < w_end
+        )
+        demo_n2 = sum(
+            1 for l in leads
+            if l.created_at
+            and w_start <= l.created_at.replace(tzinfo=timezone.utc) < w_end
+            and l.willing_for_demo
+        )
+        weekly_trend.append({"w": label, "leads": lead_n, "demos": demo_n2})
+
+    # ── Cohorts (same weekly buckets) ─────────────────────────────────────────
+    cohorts = []
+    for i, wk in enumerate(weekly_trend):
+        w_start = now - timedelta(weeks=8 - i)
+        w_end   = now - timedelta(weeks=7 - i)
+        bucket_leads = [
+            l for l in leads
+            if l.created_at
+            and w_start <= l.created_at.replace(tzinfo=timezone.utc) < w_end
+        ]
+        n = len(bucket_leads)
+        contacted2  = sum(1 for l in bucket_leads if l.status not in ("new", None))
+        replied     = sum(1 for l in bucket_leads if l.last_interaction_at and l.last_interaction_at != l.created_at)
+        demos2      = sum(1 for l in bucket_leads if l.willing_for_demo)
+        won2        = sum(1 for l in bucket_leads if l.status == "converted")
+        cohorts.append({
+            "week": wk["w"], "leads": n, "contacted": contacted2,
+            "replied": replied, "demos": demos2, "won": won2,
+        })
+
+    return {
+        "funnel":       funnel,
+        "sources":      sources,
+        "score_buckets": score_buckets,
+        "weekly_trend": weekly_trend,
+        "cohorts":      cohorts,
+        "summary": {
+            "total":     total,
+            "hot":       sum(1 for l in leads if l.lead_quality == "hot"),
+            "warm":      sum(1 for l in leads if l.lead_quality == "warm"),
+            "demos":     sum(1 for l in leads if l.willing_for_demo),
+            "converted": converted_n,
+        },
+    }
 
 
 @router.get("/{lead_id}")
