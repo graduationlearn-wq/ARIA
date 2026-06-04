@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     email_from_address: str = ""
     database_url: str = "sqlite:///./aria.db"
     human_approval_mode: bool = True   # Phase 2: drafts need human approval
-    debug: bool = True
+    debug: bool = False
 
     # Chat + alert config
     base_url: str = "http://localhost:8000"           # used to build chat links in emails
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     whatsapp_api_token: str = ""                      # Bearer token (use permanent System User token for prod)
     whatsapp_phone_number_id: str = ""                # Phone Number ID (NOT the actual phone number)
     whatsapp_business_account_id: str = ""            # WhatsApp Business Account ID (from API Setup page)
-    whatsapp_webhook_verify_token: str = "aria_beyondsure_2024"  # match this in Meta dashboard webhook config
+    whatsapp_webhook_verify_token: str = ""  # set in .env — must match what you enter in Meta dashboard webhook config
 
     model_config = SettingsConfigDict(env_file=".env")
 

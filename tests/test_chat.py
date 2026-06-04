@@ -118,9 +118,26 @@ class TestChatMessage:
         assert resp.status_code == 404
 
     def test_empty_message_returns_400(self, client, db):
+        """Whitespace-only message is caught by the route handler → 400."""
         _, token = _create_lead_and_get_token(client, db)
         resp = client.post(f"/chat/{token}/message", json={"message": "   "})
         assert resp.status_code == 400
+
+    def test_message_exceeds_max_length_returns_422(self, client, db):
+        """Messages over 2000 chars are rejected by Pydantic before hitting the LLM."""
+        _, token = _create_lead_and_get_token(client, db)
+        resp = client.post(f"/chat/{token}/message", json={"message": "A" * 2001})
+        assert resp.status_code == 422
+
+    def test_exact_max_length_accepted(self, client, db):
+        """A message of exactly 2000 chars must be accepted (boundary check)."""
+        mocks = _start_patches()
+        try:
+            _, token = _create_lead_and_get_token(client, db)
+            resp = client.post(f"/chat/{token}/message", json={"message": "B" * 2000})
+            assert resp.status_code == 200
+        finally:
+            _stop_patches(mocks)
 
     def test_guided_flow_responds_to_first_message(self, client, db):
         mocks = _start_patches()

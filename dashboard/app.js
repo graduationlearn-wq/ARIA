@@ -8,6 +8,9 @@ const $$ = sel => document.querySelectorAll(sel);
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+/** Escape user-supplied strings before inserting into innerHTML (XSS prevention) */
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
 /* ══════════════════════════════════════════════════════════════════
    LIVE DATA LAYER
    When served from FastAPI (/ui) → same-origin fetches, no CORS needed.
@@ -219,13 +222,13 @@ async function loadConvMessages(convIdx) {
       if (i.handled_by === 'human') {
         return { from: 'human', who: 'kunal', text: i.message, t };
       }
-      // ARIA outbound — badge if not yet sent
+      // ARIA outbound — store badge separately so text can be safely escaped
       const badge = i.send_status === 'pending_approval'
-        ? ' <span class="msg-status pending">pending approval</span>'
+        ? '<span class="msg-status pending">pending approval</span>'
         : i.send_status === 'rejected'
-          ? ' <span class="msg-status rejected">rejected</span>'
+          ? '<span class="msg-status rejected">rejected</span>'
           : '';
-      return { from: 'aria', text: i.message + badge, t };
+      return { from: 'aria', text: i.message, badge, t };
     });
 
     // Detect first human handoff
@@ -370,13 +373,13 @@ function renderOverviewTable() {
       <td>
         <div class="client-cell">
           <div class="client-avatar"><img src="${l.avatar}" alt=""><span class="pf-mini ${l.channel === 'facebook' ? 'fb':'ig'}"></span></div>
-          <div><div class="client-name">${l.name}</div><div class="client-handle">${l.handle}</div></div>
+          <div><div class="client-name">${esc(l.name)}</div><div class="client-handle">${esc(l.handle)}</div></div>
         </div>
       </td>
       <td>
         <div class="lead-cell">
-          <div class="lead-co">${l.company}</div>
-          <div class="lead-meta"><span class="type-tag">${TYPE_LBL[l.lead_type]||l.lead_type}</span><span>${l.city}</span></div>
+          <div class="lead-co">${esc(l.company)}</div>
+          <div class="lead-meta"><span class="type-tag">${TYPE_LBL[l.lead_type]||l.lead_type}</span><span>${esc(l.city)}</span></div>
         </div>
       </td>
       <td><span style="color:var(--ink-3);font-size:12px">${fmtDate(l.created_at)}</span></td>
@@ -510,8 +513,8 @@ function wireDotHover(host) {
       <div class="dc-tt-head">
         <div class="dc-tt-avatar"><img src="${lead.avatar}" alt=""></div>
         <div>
-          <div class="dc-tt-name">${lead.name}</div>
-          <div class="dc-tt-co">${lead.company} · ${lead.city}</div>
+          <div class="dc-tt-name">${esc(lead.name)}</div>
+          <div class="dc-tt-co">${esc(lead.company)} · ${esc(lead.city)}</div>
         </div>
       </div>
       <div class="dc-tt-meta">
@@ -553,8 +556,8 @@ function renderLeadGrid() {
           <img src="${l.avatar}" alt="">
           <span class="pf-mini" style="${pfDotStyle(l.channel)}"></span>
         </div>
-        <div class="lc-name">${l.name}</div>
-        <div class="lc-role">${l.role} · ${l.company}</div>
+        <div class="lc-name">${esc(l.name)}</div>
+        <div class="lc-role">${esc(l.role)} · ${esc(l.company)}</div>
         <div class="lc-grid">
           <div class="lc-stat">
             <span class="lc-stat-lbl">From</span>
@@ -629,10 +632,10 @@ function renderConvList() {
         </div>
         <div class="cli-body">
           <div class="cli-row">
-            <span class="cli-name">${c.lead.name}</span>
+            <span class="cli-name">${esc(c.lead.name)}</span>
             <span class="cli-time">${c.last_at}</span>
           </div>
-          <div class="cli-preview">${c.preview}</div>
+          <div class="cli-preview">${esc(c.preview)}</div>
           ${teamFlag}
         </div>
         ${c.unread ? `<div class="cli-unread">${c.unread}</div>` : ''}
@@ -667,8 +670,8 @@ function renderConvThread() {
   $('conv-head').innerHTML = `
     <div class="ch-avatar"><img src="${c.lead.avatar}" alt=""></div>
     <div>
-      <div class="ch-name">${c.lead.name}</div>
-      <div class="ch-meta">${c.lead.city} · Local time ${new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})}</div>
+      <div class="ch-name">${esc(c.lead.name)}</div>
+      <div class="ch-meta">${esc(c.lead.city)} · Local time ${new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})}</div>
     </div>
     <div class="ch-tools">
       <button class="icon-btn sm" title="Call">${ICONS.phone}</button>
@@ -729,16 +732,18 @@ function renderBubble(m) {
     const tm = TEAM[m.who] || { name: 'Team', role: 'BeyondSure', avatar: avatarUrl('BeyondSure') };
     return `
       <div class="bubble-row human">
-        <div class="bubble-who"><div class="bubble-who-avatar"><img src="${tm.avatar}" alt=""></div>${tm.name} · ${tm.role}</div>
-        <div class="bubble human">${m.text}</div>
+        <div class="bubble-who"><div class="bubble-who-avatar"><img src="${tm.avatar}" alt=""></div>${esc(tm.name)} · ${esc(tm.role)}</div>
+        <div class="bubble human">${esc(m.text)}</div>
         <div class="bubble-time">${m.t}</div>
       </div>
     `;
   }
   const cls = m.from === 'lead' ? 'lead' : 'aria';
+  // badge is a trusted HTML span (our own code); text is user/LLM-supplied → escape it
+  const badge = m.badge ? ' ' + m.badge : '';
   return `
     <div class="bubble-row ${cls}">
-      <div class="bubble ${cls}">${m.text}</div>
+      <div class="bubble ${cls}">${esc(m.text)}${badge}</div>
       <div class="bubble-time">${m.t}</div>
     </div>
   `;
@@ -774,8 +779,8 @@ function renderDrafts() {
         <div class="draft-lead">
           <div class="client-avatar"><img src="${lead.avatar}" alt=""></div>
           <div>
-            <div class="draft-lead-name">${lead.name}</div>
-            <div class="draft-lead-co">${lead.company} · ${lead.city}</div>
+            <div class="draft-lead-name">${esc(lead.name)}</div>
+            <div class="draft-lead-co">${esc(lead.company)} · ${esc(lead.city)}</div>
           </div>
         </div>
         <div class="draft-body">
@@ -784,8 +789,8 @@ function renderDrafts() {
             <span class="draft-time">Drafted at ${time}</span>
             <span class="status st-${lead.status}">${lead.status.replace(/_/g,' ')}</span>
           </div>
-          <div class="draft-subject">${d.subject}</div>
-          <div class="draft-text">${d.body}</div>
+          <div class="draft-subject">${esc(d.subject)}</div>
+          <div class="draft-text">${esc(d.body)}</div>
         </div>
         <div class="draft-actions">
           <button class="btn btn-approve" data-did="${d.id}">${ICONS.checkSm} Approve &amp; send</button>
@@ -893,7 +898,7 @@ function renderTopPerformers() {
     <li class="top-row">
       <div class="top-rank ${rankCls[i] || ''}">${i + 1}</div>
       <div class="client-avatar"><img src="${l.avatar}" alt=""></div>
-      <span class="top-name">${l.name}</span>
+      <span class="top-name">${esc(l.name)}</span>
       <span class="top-score">${l.score}</span>
     </li>
   `).join('');

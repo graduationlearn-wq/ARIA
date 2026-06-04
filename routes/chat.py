@@ -15,7 +15,7 @@ How it fits in the pipeline:
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -657,7 +657,7 @@ loadHistory();
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
