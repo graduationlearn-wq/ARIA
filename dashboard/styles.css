@@ -1282,6 +1282,37 @@ body {
 .view.active .kpi:nth-child(3) { animation-delay: .11s; }
 .view.active .kpi:nth-child(4) { animation-delay: .15s; }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━ MESSAGE STATUS BADGES ━━━━━━━━━━━━━━━ */
+.msg-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+.msg-status.pending  { background: #fef3c7; color: #b45309; }
+.msg-status.rejected { background: #fce7f3; color: #be185d; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━ LIVE DATA INDICATOR ━━━━━━━━━━━━━━━━━ */
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid #fde68a;
+  background: #fef3c7;
+  color: #b45309;
+  white-space: nowrap;
+  transition: background .3s, color .3s, border-color .3s;
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━ RESPONSIVE ━━━━━━━━━━━━━━━━━━━━━━━━━ */
 @media (max-width: 1200px) {
   .grid-overview, .grid-leads, .grid-inbox, .grid-approvals, .grid-analytics {

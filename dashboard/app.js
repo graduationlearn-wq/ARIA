@@ -7,6 +7,239 @@ const $  = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/* ══════════════════════════════════════════════════════════════════
+   LIVE DATA LAYER
+   When served from FastAPI (/ui) → same-origin fetches, no CORS needed.
+   When opened as file:// (no server) → silently falls back to data.js samples.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Generate a Dicebear avatar URL from any name */
+function avatarUrl(name) {
+  const seed = encodeURIComponent((name || 'unknown').trim());
+  return `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=d8b4fe,a78bfa,c4b5fd,ddd6fe,ede9fe`;
+}
+
+/** Convert /leads/ API item → dashboard LEAD format */
+function mapApiLead(l) {
+  const dateStr = l.created_at ? l.created_at.split('T')[0] : new Date().toISOString().split('T')[0];
+  const t = l.type || 'agent';
+  return {
+    id: l.id,
+    name: l.name || 'Unknown',
+    company: l.company || '—',
+    city: l.state || '—',
+    state: l.state || '',
+    handle: l.email || '',
+    role: t.charAt(0).toUpperCase() + t.slice(1),
+    lead_type: t,
+    channel: 'facebook',   // FB/IG webhook not yet wired — default for display
+    score: l.score || 0,
+    quality: l.quality || 'new',
+    status: l.status || 'new',
+    created_at: dateStr,
+    avatar: avatarUrl(l.name),
+    pipeline: Math.max(50000, (l.team_size || 3) * 18000),
+    owner: null,
+    last_activity_min: l.last_interaction_at
+      ? Math.max(1, Math.floor((Date.now() - new Date(l.last_interaction_at)) / 60000))
+      : null,
+    uses_software: l.uses_software,
+    team_size: l.team_size,
+    willing_for_demo: l.willing_for_demo,
+    current_intent: l.current_intent,
+    chat_url: l.chat_url,
+    human_priority: l.human_priority,
+  };
+}
+
+/** Convert /approval/queue item → dashboard PENDING_DRAFTS format */
+function mapApiDraft(d) {
+  const body  = d.draft_message || '';
+  const lines = body.split('\n').map(s => s.trim()).filter(Boolean);
+  return {
+    id:         d.draft_id,
+    lead_id:    d.lead_id,
+    intent:     d.intent_context || 'first_touch',
+    subject:    lines[0] || `Message for ${d.lead_name}`,
+    body:       lines.slice(1).join('\n') || body,
+    created_at: d.queued_at || new Date().toISOString(),
+    // keep original API fields so renderDrafts() can fall back if lead not in LEADS
+    _lead_name:    d.lead_name,
+    _lead_email:   d.lead_email,
+    _lead_quality: d.lead_quality,
+    _lead_score:   d.lead_score,
+  };
+}
+
+/** Update the live/sample indicator chip in the topbar */
+function setLiveIndicator(live, count) {
+  const pill = $('live-pill');
+  if (!pill) return;
+  if (live) {
+    pill.textContent = `● Live · ${count} lead${count !== 1 ? 's' : ''}`;
+    pill.style.cssText = 'background:#dcfce7;color:#047857;border-color:#bbf7d0';
+  } else {
+    pill.textContent = '○ Sample data';
+    pill.style.cssText = 'background:#fef3c7;color:#b45309;border-color:#fde68a';
+  }
+}
+
+/**
+ * Fetch live data from FastAPI and replace global arrays in-place.
+ * All existing render functions keep working — they still read from LEADS, PENDING_DRAFTS, etc.
+ */
+async function loadLiveData() {
+  const isServed = window.location.protocol !== 'file:';
+  if (!isServed) { setLiveIndicator(false, null); return; }
+
+  try {
+    const [statsRes, leadsRes, queueRes] = await Promise.all([
+      fetch('/leads/stats'),
+      fetch('/leads/?limit=200'),
+      fetch('/approval/queue'),
+    ]);
+    if (!statsRes.ok || !leadsRes.ok || !queueRes.ok) throw new Error('API error');
+
+    const stats    = await statsRes.json();
+    const apiLeads = await leadsRes.json();
+    const apiQueue = await queueRes.json();
+
+    // Replace sample data in-place (all render fns keep their references)
+    LEADS.length = 0;
+    apiLeads.map(mapApiLead).forEach(l => LEADS.push(l));
+
+    PENDING_DRAFTS.length = 0;
+    apiQueue.map(mapApiDraft).forEach(d => PENDING_DRAFTS.push(d));
+
+    // Update co-pilot with real operational numbers
+    OPERATING_STATUS.monitoring = LEADS.length;
+    OPERATING_STATUS.drafting   = PENDING_DRAFTS.length;
+    const hot  = (stats.by_quality || {}).hot  || 0;
+    OPERATING_STATUS.today = [
+      { val: LEADS.length,          lbl: 'Total leads' },
+      { val: hot,                   lbl: 'Hot' },
+      { val: PENDING_DRAFTS.length, lbl: 'Pending approvals' },
+    ];
+
+    // Build Inbox conversations from leads that have had any interaction.
+    // Sort by most-recently active first; limit to 25.
+    const convLeads = [...LEADS]
+      .filter(l => l.last_activity_min !== null)
+      .sort((a, b) => (a.last_activity_min ?? 99999) - (b.last_activity_min ?? 99999))
+      .slice(0, 25);
+
+    if (convLeads.length > 0) {
+      CONVERSATIONS.length = 0;
+      convLeads.forEach(l => CONVERSATIONS.push({
+        lead_id: l.id,
+        unread:  0,
+        last_at: relTime(l.last_activity_min),
+        escalated: l.status === 'escalated' || l.status === 'needs_human',
+        handoff_at: null,
+        handed_to:  null,
+        preview: l.current_intent
+          ? l.current_intent.replace(/_/g, ' ')
+          : `${l.quality} · score ${l.score}`,
+        lead: {
+          id:      l.id,
+          name:    l.name,
+          city:    l.city,
+          channel: l.channel,
+          avatar:  l.avatar,
+        },
+        messages: null,   // lazy-loaded on first click
+      }));
+    }
+
+    setLiveIndicator(true, LEADS.length);
+  } catch (_) {
+    // Server not running or network issue — silently use sample data
+    setLiveIndicator(false, null);
+  }
+}
+
+/** Approve a draft via the API, then refresh */
+async function approveDraft(draftId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = `${ICONS.clock} Sending…`;
+  try {
+    const r = await fetch(`/approval/${draftId}/approve`, { method: 'POST' });
+    if (r.ok) {
+      await loadLiveData();
+      renderDrafts(); renderKPIs(); renderCopilot(); renderOverviewTable();
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = `${ICONS.checkSm} Approve &amp; send`;
+    }
+  } catch { btn.disabled = false; }
+}
+
+/** Reject a draft via the API, then refresh */
+async function rejectDraft(draftId, btn) {
+  btn.disabled = true;
+  try {
+    await fetch(`/approval/${draftId}/reject`, { method: 'POST' });
+    await loadLiveData();
+    renderDrafts(); renderKPIs(); renderCopilot(); renderOverviewTable();
+  } catch { btn.disabled = false; }
+}
+
+/* ── Inbox helpers ─────────────────────────────────────────────────────────── */
+
+/** Format minutes-ago into a short relative string */
+function relTime(minutes) {
+  if (!minutes || minutes < 1) return 'now';
+  if (minutes < 60)   return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1440)}d`;
+}
+
+/**
+ * Fetch a lead's full interaction history from the API and populate c.messages.
+ * Called lazily when the user first opens a conversation.
+ */
+async function loadConvMessages(convIdx) {
+  const c = CONVERSATIONS[convIdx];
+  if (!c || c.messages !== null) return;
+
+  try {
+    const r = await fetch(`/leads/${c.lead_id}`);
+    if (!r.ok) { c.messages = []; return; }
+    const { lead, interactions } = await r.json();
+
+    c.messages = interactions.map(i => {
+      const t = i.timestamp
+        ? new Date(i.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        : '—';
+
+      if (i.direction === 'inbound') {
+        return { from: 'lead', text: i.message, t };
+      }
+      if (i.handled_by === 'human') {
+        return { from: 'human', who: 'kunal', text: i.message, t };
+      }
+      // ARIA outbound — badge if not yet sent
+      const badge = i.send_status === 'pending_approval'
+        ? ' <span class="msg-status pending">pending approval</span>'
+        : i.send_status === 'rejected'
+          ? ' <span class="msg-status rejected">rejected</span>'
+          : '';
+      return { from: 'aria', text: i.message + badge, t };
+    });
+
+    // Detect first human handoff
+    const firstHuman = interactions.find(
+      i => i.handled_by === 'human' && i.direction === 'outbound'
+    );
+    if (firstHuman) {
+      c.escalated = true;
+      c.handoff_at = new Date(firstHuman.timestamp)
+        .toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      c.handed_to = 'kunal';
+    }
+  } catch (_) { c.messages = []; }
+}
 const fmtDate = iso => {
   const [, m, d] = iso.split('-');
   return `${parseInt(d)} ${MONTHS[parseInt(m)-1]}`;
@@ -177,13 +410,18 @@ function renderDotChart() {
   const chartW = W - PAD.l - PAD.r;
   const chartH = H - PAD.t - PAD.b;
 
-  // group leads by day (sort hottest first within a day)
+  // group leads by day — last 28 days from today (dynamic, not hardcoded to May)
+  const todayDt = new Date();
   const days = [];
-  for (let d = 1; d <= 28; d++) {
-    const key = `2026-05-${String(d).padStart(2,'0')}`;
+  for (let i = 27; i >= 0; i--) {
+    const dt = new Date(todayDt);
+    dt.setDate(todayDt.getDate() - i);
+    const key = dt.toISOString().split('T')[0];
+    const mo  = MONTHS[dt.getMonth()];
+    const day = dt.getDate();
     const todays = LEADS.filter(l => l.created_at === key)
       .sort((a, b) => b.score - a.score);
-    days.push({ date: key, day: d, leads: todays });
+    days.push({ date: key, day, month: mo, leads: todays });
   }
 
   // Focus: today (last day in range). If it has zero leads, fall back to most recent active day.
@@ -246,7 +484,7 @@ function renderDotChart() {
     if (!labelIdx.has(idx)) return;
     const x = PAD.l + idx * slot + slot / 2;
     const cls = idx === focusIdx ? 'dc-x-lbl active' : 'dc-x-lbl';
-    const text = idx === days.length - 1 ? 'Today' : `May ${d.day}`;
+    const text = idx === days.length - 1 ? 'Today' : `${d.month} ${d.day}`;
     svg += `<text class="${cls}" x="${x}" y="${H - 8}" text-anchor="middle">${text}</text>`;
   });
 
@@ -439,21 +677,44 @@ function renderConvThread() {
     </div>
   `;
 
-  // Walk messages — inject a handoff divider the first time we see a `human` sender.
+  // Lazy-load messages when this conversation hasn't been opened yet
+  if (c.messages === null) {
+    $('conv-thread').innerHTML = `
+      <div style="padding:40px;text-align:center;color:var(--ink-4);font-size:13px">
+        Loading conversation…
+      </div>`;
+    loadConvMessages(activeConv).then(() => {
+      // Only re-render if the user is still on this conversation
+      if (CONVERSATIONS[activeConv] === c) renderConvThread();
+    });
+    return;
+  }
+
+  if (c.messages.length === 0) {
+    $('conv-thread').innerHTML = `
+      <div style="padding:40px;text-align:center;color:var(--ink-4);font-size:13px">
+        No messages yet — ARIA's first-touch draft is in the approval queue.
+      </div>`;
+    return;
+  }
+
+  // Walk messages — inject a handoff divider the first time we see a human sender.
   // Preserves full lead↔ARIA history so the teammate picks up with context.
+  const FALLBACK_TM = { name: 'Team', role: 'BeyondSure', avatar: avatarUrl('BeyondSure Team') };
+
   let dividerInjected = false;
   $('conv-thread').innerHTML = c.messages.map(m => {
     let divider = '';
     if (m.from === 'human' && !dividerInjected) {
       dividerInjected = true;
-      const tm = TEAM[c.handed_to] || TEAM[m.who];
+      const tm = TEAM[c.handed_to] || TEAM[m.who] || FALLBACK_TM;
       divider = `
         <div class="handoff-divider">
           <div class="ho-line"></div>
           <div class="handoff-pill">
             <div class="ho-avatar"><img src="${tm.avatar}" alt=""></div>
             <span>ARIA handed off to <b>${tm.name}</b></span>
-            <span class="ho-time">· ${c.handoff_at}</span>
+            <span class="ho-time">· ${c.handoff_at || 'now'}</span>
           </div>
           <div class="ho-line"></div>
         </div>
@@ -465,7 +726,7 @@ function renderConvThread() {
 
 function renderBubble(m) {
   if (m.from === 'human') {
-    const tm = TEAM[m.who];
+    const tm = TEAM[m.who] || { name: 'Team', role: 'BeyondSure', avatar: avatarUrl('BeyondSure') };
     return `
       <div class="bubble-row human">
         <div class="bubble-who"><div class="bubble-who-avatar"><img src="${tm.avatar}" alt=""></div>${tm.name} · ${tm.role}</div>
@@ -486,12 +747,30 @@ function renderBubble(m) {
 /* ══════════════════════ APPROVALS VIEW ══════════════════════ */
 function renderDrafts() {
   $('ap-pending').textContent = PENDING_DRAFTS.length;
+
+  if (!PENDING_DRAFTS.length) {
+    $('draft-list').innerHTML = `
+      <div style="padding:48px;text-align:center;color:var(--ink-4)">
+        <div style="font-size:32px;margin-bottom:8px">✓</div>
+        <div style="font-weight:600;color:var(--ink-2)">All clear</div>
+        <div style="font-size:13px;margin-top:4px">No drafts waiting for review</div>
+      </div>`;
+    return;
+  }
+
   $('draft-list').innerHTML = PENDING_DRAFTS.map(d => {
-    const lead = LEADS.find(l => l.id === d.lead_id);
-    if (!lead) return '';
-    const time = d.created_at.split('T')[1].slice(0, 5);
+    // Prefer live LEADS lookup; fall back to API fields stored in draft
+    const lead = LEADS.find(l => l.id === d.lead_id) || {
+      avatar: avatarUrl(d._lead_name || 'Unknown'),
+      name: d._lead_name || 'Unknown',
+      company: d._lead_email || '—',
+      city: '—',
+      status: 'active',
+      quality: d._lead_quality || 'new',
+    };
+    const time = d.created_at ? d.created_at.split('T')[1]?.slice(0, 5) : '—';
     return `
-      <div class="draft">
+      <div class="draft" data-draft-id="${d.id}">
         <div class="draft-lead">
           <div class="client-avatar"><img src="${lead.avatar}" alt=""></div>
           <div>
@@ -509,13 +788,21 @@ function renderDrafts() {
           <div class="draft-text">${d.body}</div>
         </div>
         <div class="draft-actions">
-          <button class="btn btn-approve">${ICONS.checkSm} Approve &amp; send</button>
+          <button class="btn btn-approve" data-did="${d.id}">${ICONS.checkSm} Approve &amp; send</button>
           <button class="btn btn-edit">${ICONS.edit} Edit</button>
-          <button class="btn btn-reject">${ICONS.x} Reject</button>
+          <button class="btn btn-reject" data-did="${d.id}">${ICONS.x} Reject</button>
         </div>
       </div>
     `;
   }).join('');
+
+  // Wire approve / reject buttons to the live API
+  $$('#draft-list .btn-approve').forEach(btn => {
+    btn.addEventListener('click', () => approveDraft(btn.dataset.did, btn));
+  });
+  $$('#draft-list .btn-reject').forEach(btn => {
+    btn.addEventListener('click', () => rejectDraft(btn.dataset.did, btn));
+  });
 }
 
 /* ══════════════════════ ANALYTICS VIEW ══════════════════════ */
@@ -618,46 +905,70 @@ function renderMe() {
   if (img) img.src = ME.avatar;
 }
 
-/* ══════════════════════ BOOT ══════════════════════ */
-document.addEventListener('DOMContentLoaded', () => {
-  renderMe();
-  wireNav();
-
-  // overview
+/* ══════════════════════ RE-RENDER ALL ══════════════════════ */
+function renderAll() {
   renderKPIs();
   renderPriority();
   renderCopilot();
   renderOverviewTable();
-  wireOverviewTabs();
   renderDotChart();
-
-  // leads
   renderLeadGrid();
   renderSourceMix();
-  wireLeadsTabs();
-
-  // inbox — default to the first escalated thread so the handoff flow is visible
-  const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
-  if (firstEscalated >= 0) activeConv = firstEscalated;
-  wireConvFilters();
   renderConvList();
   renderConvThread();
-
-  // approvals
   renderDrafts();
-
-  // analytics
   renderFunnel();
   renderSourceChart();
   renderHistogram();
   renderWeekly();
   renderCohorts();
   renderTopPerformers();
+}
 
-  // re-render chart on resize
+/* ══════════════════════ BOOT ══════════════════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+  renderMe();
+  wireNav();
+  wireOverviewTabs();
+  wireLeadsTabs();
+
+  // Inbox — default to first escalated thread (shows ARIA→human handoff)
+  const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
+  if (firstEscalated >= 0) activeConv = firstEscalated;
+  wireConvFilters();
+
+  // 1. Render immediately with sample data (instant visual — no blank flash)
+  renderAll();
+
+  // 2. Load live data from the API, then re-render with real numbers
+  await loadLiveData();
+  renderAll();
+
+  // Refresh button
+  const refreshBtn = $('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.style.opacity = '0.4';
+      refreshBtn.style.pointerEvents = 'none';
+      await loadLiveData();
+      renderAll();
+      refreshBtn.style.opacity = '';
+      refreshBtn.style.pointerEvents = '';
+    });
+  }
+
+  // Re-render chart on resize
   let rt;
   window.addEventListener('resize', () => {
     clearTimeout(rt);
     rt = setTimeout(renderDotChart, 150);
   });
+
+  // Auto-refresh live data every 30 s (keeps approvals queue current)
+  setInterval(async () => {
+    await loadLiveData();
+    renderDrafts();
+    renderKPIs();
+    renderCopilot();
+  }, 30_000);
 });
