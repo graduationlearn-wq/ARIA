@@ -696,6 +696,83 @@ function wireLeadsTabs() {
   }));
 }
 
+/* ══════════════════════ INBOX COMPOSER ══════════════════════ */
+
+/**
+ * Enable or disable the Inbox message composer depending on whether
+ * the active conversation has been escalated to the team.
+ * Only escalated conversations allow team replies.
+ */
+function wireInboxComposer(c) {
+  const form    = document.getElementById('conv-input-form');
+  const input   = document.getElementById('inbox-reply-input');
+  const sendBtn = document.getElementById('inbox-send-btn');
+  const foot    = document.getElementById('conv-foot');
+  if (!form || !input || !sendBtn) return;
+
+  if (c && c.escalated) {
+    input.disabled   = false;
+    sendBtn.disabled = false;
+    input.placeholder = `Reply to ${esc(c.lead.name)}…`;
+    if (foot) foot.textContent = 'You are replying as a team member. Lead sees this in real-time.';
+
+    // Replace any previous handler (fresh wire each render)
+    const handler = (e) => {
+      e.preventDefault();
+      sendHumanReply(c, input, sendBtn);
+    };
+    form.onsubmit = handler;
+  } else {
+    input.disabled    = true;
+    sendBtn.disabled  = true;
+    input.placeholder = 'ARIA is handling this conversation';
+    if (foot) foot.textContent = 'ARIA is managing this conversation.';
+    form.onsubmit = e => e.preventDefault();
+  }
+}
+
+/** Send a human reply from the Inbox to the lead's chat thread. */
+async function sendHumanReply(c, input, sendBtn) {
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  input.disabled   = true;
+  sendBtn.disabled = true;
+  const original   = sendBtn.innerHTML;
+  sendBtn.innerHTML = ICONS.clock;
+
+  try {
+    const r = await fetch(`/chat/admin/${c.lead_id}/reply`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ message: msg }),
+    });
+
+    if (r.ok) {
+      const data = await r.json();
+      input.value = '';
+
+      // Optimistically append to the conversation thread
+      if (c.messages) {
+        c.messages.push({
+          from: 'human',
+          who:  'kunal',
+          text: data.message,
+          t:    new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        });
+        renderConvThread();   // re-renders thread + re-wires composer
+        return;               // early return — composer is re-wired inside renderConvThread
+      }
+    }
+  } catch (_) {}
+
+  // Restore on error
+  sendBtn.innerHTML = original;
+  input.disabled    = false;
+  sendBtn.disabled  = false;
+  input.focus();
+}
+
 /* ══════════════════════ INBOX VIEW ══════════════════════ */
 let activeConv = 0;
 let convFilter = 'all';   // 'all' | 'aria' | 'team'
@@ -780,6 +857,7 @@ function renderConvThread() {
       <div style="padding:40px;text-align:center;color:var(--ink-4);font-size:13px">
         Loading conversation…
       </div>`;
+    wireInboxComposer(null);   // disable composer while loading
     loadConvMessages(activeConv).then(() => {
       // Only re-render if the user is still on this conversation
       if (CONVERSATIONS[activeConv] === c) renderConvThread();
@@ -794,6 +872,9 @@ function renderConvThread() {
       </div>`;
     return;
   }
+
+  // Wire composer now that messages are loaded
+  wireInboxComposer(c);
 
   // Walk messages — inject a handoff divider the first time we see a human sender.
   // Preserves full lead↔ARIA history so the teammate picks up with context.

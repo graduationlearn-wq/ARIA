@@ -283,12 +283,13 @@
         <section class="card conv-card">
           <header class="conv-head" id="conv-head"></header>
           <div class="conv-thread" id="conv-thread"></div>
-          <form class="conv-input" onsubmit="event.preventDefault();">
-            <button type="button" class="icon-btn sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-            <input type="text" placeholder="Send a message…">
-            <button class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          <form class="conv-input" id="conv-input-form" onsubmit="event.preventDefault();">
+            <input type="text" id="inbox-reply-input" placeholder="ARIA is handling this conversation" disabled>
+            <button type="submit" class="send-btn" id="inbox-send-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
           </form>
-          <div class="conv-foot">ARIA can make mistakes. Consider checking important information.</div>
+          <div class="conv-foot" id="conv-foot">ARIA is managing this conversation.</div>
         </section>
 
         <aside class="card conv-list-card">

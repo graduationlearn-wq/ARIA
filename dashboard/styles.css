@@ -1282,6 +1282,31 @@ body {
 .view.active .kpi:nth-child(3) { animation-delay: .11s; }
 .view.active .kpi:nth-child(4) { animation-delay: .15s; }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━ INBOX COMPOSER STATES ━━━━━━━━━━━━━━━ */
+/* Disabled — ARIA is handling */
+.conv-input input:disabled {
+  background: #f4f4f8;
+  color: var(--ink-4);
+  cursor: not-allowed;
+  font-style: italic;
+}
+.conv-input .send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+/* Active — team member replying */
+.conv-input input:not(:disabled) {
+  background: #fff;
+  color: var(--ink-1);
+  font-style: normal;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108,92,231,0.08);
+}
+.conv-input input:not(:disabled):focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━ MESSAGE STATUS BADGES ━━━━━━━━━━━━━━━ */
 .msg-status {
   display: inline-block;

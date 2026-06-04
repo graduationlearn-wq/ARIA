@@ -261,6 +261,29 @@ CHAT_HTML = """<!DOCTYPE html>
   .bubble a { color: inherit; text-decoration: underline; word-break: break-all; }
   .user .bubble a { color: rgba(255,255,255,.82); }
 
+  /* Human team member bubble — appears when team takes over in chat */
+  .msg-group.human { align-items: flex-start; }
+  .human-lbl {
+    font-size: 10.5px; font-weight: 600; color: #64748b;
+    margin-bottom: 4px; padding-left: 4px; letter-spacing: .02em;
+  }
+  .human .bubble {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff;
+    border-radius: 4px 18px 18px 18px;
+    box-shadow: 0 2px 8px rgba(15,23,42,.18);
+  }
+
+  /* "Team has joined" system message */
+  .team-joined {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0; font-size: 11.5px; color: #64748b;
+    font-weight: 500;
+  }
+  .team-joined::before, .team-joined::after {
+    content: ''; flex: 1; height: 1px; background: #e2e8f0;
+  }
+
   .msg-ts { font-size: 10.5px; color: #94a3b8; margin-top: 4px; padding: 0 3px; }
 
   .date-div {
@@ -508,6 +531,8 @@ CHAT_HTML = """<!DOCTYPE html>
 const TOKEN = "__TOKEN__";
 const BASE  = window.location.origin;
 let sending = false;
+let knownMsgCount   = 0;   // total messages rendered (to detect new ones from polling)
+let pollTimer       = null; // setInterval handle for human-takeover polling
 
 /* ── Utils ───────────────────────────────────────────────────────── */
 function fmtTime(ts) {
@@ -538,10 +563,20 @@ function linkify(raw) {
 }
 
 /* ── Render ──────────────────────────────────────────────────────── */
-function addBubble(role, text, ts, options) {
+function addBubble(role, text, ts, options, handledBy) {
   const msgs = document.getElementById('messages');
   const grp  = document.createElement('div');
-  grp.className = 'msg-group ' + role;
+
+  // Human team member takes over → distinct from ARIA
+  const isHuman = (role === 'aria' || role === 'human') && handledBy === 'human';
+  grp.className = 'msg-group ' + (isHuman ? 'human' : role);
+
+  if (isHuman) {
+    const lbl = document.createElement('div');
+    lbl.className = 'human-lbl';
+    lbl.textContent = '👤 BeyondSure Team';
+    grp.appendChild(lbl);
+  }
 
   const bub = document.createElement('div');
   bub.className = 'bubble';
@@ -606,11 +641,13 @@ async function send(text) {
     await new Promise(r => setTimeout(r, 680));
     hideTyping();
 
+    knownMsgCount += 2; // user message + ARIA/system response
     if (data.escalated) {
       addBubble('aria', data.message, new Date().toISOString(), null);
       document.getElementById('escalatedBanner').style.display = 'block';
       const pb = document.getElementById('personBtn');
       if (pb) pb.style.display = 'none';
+      startPolling(); // begin watching for team member replies
     } else {
       addBubble('aria', data.message, new Date().toISOString(), data.options || null);
     }
@@ -624,6 +661,36 @@ async function send(text) {
 function onKey(e) { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); } }
 function askForPerson() { send("I'd like to speak to a real person please."); }
 
+/* ── Team takeover polling ───────────────────────────────────────── */
+// After escalation, poll every 4s for human replies from the team dashboard.
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollForTeamReplies, 4000);
+}
+
+async function pollForTeamReplies() {
+  try {
+    const res  = await fetch(`${BASE}/chat/${TOKEN}/history`);
+    const data = await res.json();
+    if (!data.messages) return;
+
+    // Only add messages that are new AND sent by a human team member
+    data.messages.slice(knownMsgCount).forEach(m => {
+      if (m.handled_by === 'human') {
+        // Insert "Team joined" divider on first human message
+        if (!document.querySelector('.team-joined')) {
+          const div = document.createElement('div');
+          div.className = 'team-joined';
+          div.textContent = 'A team member has joined';
+          document.getElementById('messages').appendChild(div);
+        }
+        addBubble('human', m.text, m.timestamp, null, 'human');
+      }
+    });
+    knownMsgCount = data.messages.length;
+  } catch (_) {}
+}
+
 /* ── Load history ────────────────────────────────────────────────── */
 async function loadHistory() {
   try {
@@ -636,8 +703,12 @@ async function loadHistory() {
       return;
     }
     if (data.messages && data.messages.length > 0) {
-      data.messages.forEach(m => addBubble(m.role, m.text, m.timestamp, null));
+      data.messages.forEach(m => addBubble(m.role, m.text, m.timestamp, null, m.handled_by));
+      knownMsgCount = data.messages.length;
       if (data.last_options && data.last_options.length) addOptions(data.last_options);
+      // If conversation was already escalated, start polling for team replies
+      const hasHuman = data.messages.some(m => m.handled_by === 'human');
+      if (hasHuman) startPolling();
     } else if (data.welcome) {
       addBubble('aria', data.welcome.message, new Date().toISOString(), data.welcome.options);
     }
@@ -707,6 +778,7 @@ def get_chat_history(token: str, db: Session = Depends(get_db)):
     messages = [
         {
             "role": "user" if i.direction == "inbound" else "aria",
+            "handled_by": i.handled_by or "aria",
             "text": i.message_text or "",
             "timestamp": i.timestamp.isoformat() if i.timestamp else None,
         }
@@ -1124,6 +1196,49 @@ def admin_chat_view(lead_id: int, db: Session = Depends(get_db)):
             }
             for i in history
         ],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Human reply endpoint (team member → lead chat thread)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class HumanReply(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.post("/admin/{lead_id}/reply")
+def admin_send_reply(lead_id: int, body: HumanReply, db: Session = Depends(get_db)):
+    """
+    Team member sends a message directly into a lead's chat thread.
+    The lead's chat page polls for this and displays it in real-time.
+    """
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    interaction = Interaction(
+        lead_id=lead.id,
+        direction="outbound",
+        channel="chat",
+        message_text=body.message.strip(),
+        message_type="chat_out",
+        handled_by="human",
+        send_status="sent",
+    )
+    db.add(interaction)
+    lead.last_interaction_at = datetime.now(timezone.utc)
+    # Once a human replies, mark as needs_human so Inbox filter shows it
+    if lead.status not in ("converted", "lost"):
+        lead.status = "needs_human"
+    db.commit()
+    db.refresh(interaction)
+
+    return {
+        "id":        interaction.id,
+        "message":   interaction.message_text,
+        "timestamp": interaction.timestamp.isoformat(),
+        "lead_name": lead.first_name,
     }
 
 

@@ -223,6 +223,70 @@ class TestChatMessage:
             _stop_patches(mocks)
 
 
+class TestHumanReply:
+    """Tests for POST /chat/admin/{lead_id}/reply — team member sends into chat thread."""
+
+    def test_human_reply_creates_interaction(self, client, db):
+        from models.interaction import Interaction
+        mocks = _start_patches()
+        try:
+            lead_id, token = _create_lead_and_get_token(client, db)
+            resp = client.post(
+                f"/chat/admin/{lead_id}/reply",
+                json={"message": "Hi, this is Kunal from BeyondSure. How can I help?"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["lead_name"] is not None
+            assert "message" in data
+            assert "timestamp" in data
+
+            # Verify the interaction row was created as human outbound
+            interaction = (
+                db.query(Interaction)
+                .filter(
+                    Interaction.lead_id == lead_id,
+                    Interaction.handled_by == "human",
+                    Interaction.direction == "outbound",
+                )
+                .first()
+            )
+            assert interaction is not None
+            assert interaction.message_text == "Hi, this is Kunal from BeyondSure. How can I help?"
+        finally:
+            _stop_patches(mocks)
+
+    def test_human_reply_appears_in_chat_history(self, client, db):
+        mocks = _start_patches()
+        try:
+            lead_id, token = _create_lead_and_get_token(client, db)
+            # Open chat first (sets chat_opened_at)
+            client.get(f"/chat/{token}/history")
+            # Team member sends a reply
+            client.post(f"/chat/admin/{lead_id}/reply", json={"message": "Team reply here."})
+            # History should now include the human message
+            resp = client.get(f"/chat/{token}/history")
+            data = resp.json()
+            human_msgs = [m for m in data.get("messages", []) if m.get("handled_by") == "human"]
+            assert len(human_msgs) >= 1
+            assert human_msgs[-1]["text"] == "Team reply here."
+        finally:
+            _stop_patches(mocks)
+
+    def test_human_reply_404_for_unknown_lead(self, client, db):
+        resp = client.post("/chat/admin/99999/reply", json={"message": "Hello"})
+        assert resp.status_code == 404
+
+    def test_human_reply_too_long_returns_422(self, client, db):
+        mocks = _start_patches()
+        try:
+            lead_id, _ = _create_lead_and_get_token(client, db)
+            resp = client.post(f"/chat/admin/{lead_id}/reply", json={"message": "X" * 2001})
+            assert resp.status_code == 422
+        finally:
+            _stop_patches(mocks)
+
+
 class TestChatAdminView:
 
     def test_admin_view_returns_conversation(self, client, db):
