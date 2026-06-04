@@ -53,6 +53,11 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 ::selection { background: var(--pri-300); color: #fff; }
 
+/* The [hidden] attribute must always win, even over class rules that set
+   display (e.g. .search-overlay{display:flex}). Without this, toggling
+   element.hidden has no visual effect. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
