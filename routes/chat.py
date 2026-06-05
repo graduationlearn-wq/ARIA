@@ -641,14 +641,23 @@ async function send(text) {
     await new Promise(r => setTimeout(r, 680));
     hideTyping();
 
-    knownMsgCount += 2; // user message + ARIA/system response
-    if (data.escalated) {
+    if (data.silent) {
+      // Team has taken over — ARIA stays quiet. Only the lead's message was
+      // persisted; the team's reply arrives via polling.
+      knownMsgCount += 1;
+      document.getElementById('escalatedBanner').style.display = 'block';
+      const pb = document.getElementById('personBtn');
+      if (pb) pb.style.display = 'none';
+      startPolling();
+    } else if (data.escalated) {
+      knownMsgCount += 2; // user message + ARIA/system response
       addBubble('aria', data.message, new Date().toISOString(), null);
       document.getElementById('escalatedBanner').style.display = 'block';
       const pb = document.getElementById('personBtn');
       if (pb) pb.style.display = 'none';
       startPolling(); // begin watching for team member replies
     } else {
+      knownMsgCount += 2; // user message + ARIA response
       addBubble('aria', data.message, new Date().toISOString(), data.options || null);
     }
   } catch(e) {
@@ -852,6 +861,24 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
         _log_outbound(lead, outbound_text, "not_interested", db)
         return {"message": outbound_text, "options": [], "escalated": False}
 
+    # 3b. Human takeover — once the team owns this thread, ARIA stays silent.
+    # The lead's message is still logged (so the team sees it), but no bot/LLM
+    # reply is generated. The team replies via the Inbox composer, which the
+    # chat page picks up through polling.
+    human_took_over = (
+        lead.assigned_to == "human_queue"
+        or db.query(Interaction.id)
+        .filter(
+            Interaction.lead_id == lead.id,
+            Interaction.handled_by == "human",
+        )
+        .first()
+        is not None
+    )
+    if human_took_over:
+        db.commit()  # persist the inbound message for the team
+        return {"message": "", "options": [], "escalated": True, "silent": True}
+
     # 4. Handle escalation (bot detection, wants a human)
     if should_escalate(intent):
         lead.status = "needs_human"
@@ -877,6 +904,30 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
 
     # 5. Check if guided flow still has a step to complete
     current_step = get_next_guided_step(lead)
+
+    # Bug fix: the lead-ad form pre-sets willing_for_demo=True (it scores the
+    # "open to evaluating" answer), which makes the flow skip the in-chat demo
+    # question and jump straight to "when works best for a call?". Always ask
+    # the demo-interest question in chat first. We only reset the flag here if
+    # the demo question was never actually asked in chat — the lead keeps the
+    # score they already banked, and re-confirming "yes" re-sets the flag.
+    if current_step and current_step["field"] == "demo_preference":
+        demo_q_asked = (
+            db.query(Interaction.id)
+            .filter(
+                Interaction.lead_id == lead.id,
+                Interaction.direction == "outbound",
+                Interaction.message_type == "chat_out",
+                Interaction.message_text.like("Would you like to quickly see how BeyondSure works%"),
+            )
+            .first()
+            is not None
+        )
+        if not demo_q_asked:
+            lead.willing_for_demo = None  # let the demo-interest step run in chat
+            db.flush()
+            current_step = get_next_guided_step(lead)
+
     if current_step:
         updates = parse_guided_answer(current_step["field"], message, lead)
         action = updates.pop("_action", None)  # extract routing action if present

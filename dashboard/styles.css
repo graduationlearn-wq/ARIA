@@ -1005,9 +1005,10 @@ body {
   padding: 20px 22px;
   display: flex; flex-direction: column; gap: 14px;
   overflow-y: auto;
+  overflow-x: hidden;
   max-height: 460px;
 }
-.bubble-row { display: flex; flex-direction: column; gap: 4px; max-width: 70%; }
+.bubble-row { display: flex; flex-direction: column; gap: 4px; max-width: 70%; min-width: 0; }
 .bubble-row.lead { align-self: flex-start; }
 .bubble-row.aria { align-self: flex-end; align-items: flex-end; }
 .bubble-time { font-size: 10.5px; color: var(--ink-4); padding: 0 6px; font-weight: 500; }
@@ -1016,6 +1017,10 @@ body {
   border-radius: var(--r-md);
   font-size: 13.5px; color: var(--ink-1);
   line-height: 1.5;
+  /* keep long words / URLs / newlines from pushing the panel offscreen */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .bubble.lead { background: var(--bg-soft); border-bottom-left-radius: 4px; }
 .bubble.aria { background: var(--pri-100); color: var(--pri-700); border-bottom-right-radius: 4px; }
