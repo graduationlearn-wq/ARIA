@@ -140,6 +140,9 @@ body {
 .pf-fb { background: #1877f2; font-family: Georgia, serif; font-style: italic; font-size: 14px; }
 .pf-ig { background: linear-gradient(135deg, #f09433, #dc2743, #bc1888); }
 .pf-wa { background: #25d366; }
+/* small inline badge for lead-source indicators (cards, detail modal) */
+.pf-badge--xs { width: 16px; height: 16px; border: none; margin-left: 0; font-size: 9px; flex-shrink: 0; }
+.pf-badge--xs svg { width: 9px; height: 9px; }
 .pf-add {
   width: 24px; height: 24px;
   background: transparent;
@@ -462,6 +465,11 @@ body {
 }
 .pf-mini.fb { background: #1877f2; }
 .pf-mini.ig { background: linear-gradient(135deg, #f09433, #dc2743, #bc1888); }
+.pf-mini.wa { background: #25d366; }
+/* render the white platform glyph inside the corner pip (icon, not just a color) */
+.pf-mini { display: grid; place-items: center; color: #fff; overflow: hidden;
+           font-family: Georgia, serif; font-style: italic; font-weight: 700; font-size: 9px; line-height: 1; }
+.pf-mini svg { width: 62%; height: 62%; }
 .client-name { font-weight: 600; color: var(--ink-1); font-size: 13px; line-height: 1.2; }
 .client-handle { font-size: 11px; color: var(--ink-3); }
 
@@ -1584,6 +1592,35 @@ body {
 .modal-close:hover { background: var(--bg-soft); color: var(--ink-1); }
 .modal-close svg { width: 20px; height: 20px; }
 .modal-sub { font-size: 13px; color: var(--ink-3); margin: 6px 0 18px; }
+
+/* ── Clickable lead card + source dot ── */
+.lead-card { cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.lead-card:hover { transform: translateY(-2px); box-shadow: var(--sh-pop); border-color: var(--pri-300); }
+.lead-card:focus-visible { outline: 2px solid var(--pri-500); outline-offset: 2px; }
+
+/* ── Lead detail modal ── */
+.ld-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.ld-name { font-size: 18px; font-weight: 800; color: var(--ink-1); }
+.ld-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 100px; text-transform: capitalize; white-space: nowrap; }
+.ld-q-hot  { background:#fee2e2; color:#b91c1c; }
+.ld-q-warm { background:#ffedd5; color:#c2410c; }
+.ld-q-cold { background:#e0f2fe; color:#0369a1; }
+.ld-q-new  { background:#f1f5f9; color:#475569; }
+.ld-sub { font-size: 13px; color: var(--ink-3); margin: 2px 0 6px; }
+.ld-section { padding: 14px 0; border-top: 1px solid var(--line); }
+.ld-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-4); margin-bottom: 10px; }
+.ld-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; font-size: 13px; }
+.ld-k { color: var(--ink-3); flex-shrink: 0; }
+.ld-v { color: var(--ink-1); font-weight: 600; text-align: right; word-break: break-word; display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.ld-bar-row { display: grid; grid-template-columns: 1fr 90px auto; align-items: center; gap: 10px; margin-bottom: 9px; }
+.ld-bar-lbl { font-size: 12px; color: var(--ink-2); }
+.ld-bar-track { height: 7px; background: var(--bg-soft); border-radius: 100px; overflow: hidden; }
+.ld-bar-fill { display: block; height: 100%; border-radius: 100px; transition: width .3s; }
+.ld-bar-val { font-size: 12px; font-weight: 700; color: var(--ink-1); }
+.ld-bar-val small { color: var(--ink-4); font-weight: 500; }
+.ld-score-note { font-size: 11.5px; color: var(--ink-4); margin-top: 6px; line-height: 1.5; }
+.ld-msg { font-size: 12.5px; color: var(--ink-2); padding: 4px 0; line-height: 1.5; word-break: break-word; }
+.ld-msg b { color: var(--ink-1); }
 
 .modal-form { display: flex; flex-direction: column; gap: 14px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

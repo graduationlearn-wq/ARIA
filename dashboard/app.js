@@ -519,7 +519,7 @@ function renderOverviewTable() {
     <tr>
       <td>
         <div class="client-cell">
-          <div class="client-avatar"><img src="${l.avatar}" alt=""><span class="pf-mini ${l.channel === 'facebook' ? 'fb':'ig'}"></span></div>
+          <div class="client-avatar"><img src="${l.avatar}" alt="">${pfPip(l.channel)}</div>
           <div><div class="client-name">${esc(l.name)}</div><div class="client-handle">${esc(l.handle)}</div></div>
         </div>
       </td>
@@ -727,8 +727,26 @@ function cycleLeadSort() {
   toast(`Sorted by ${SORT_LABEL[leadsSort]}`);
 }
 
-function pfDotStyle(channel) {
-  return channel === 'facebook' ? 'background:#1877f2' : 'background:linear-gradient(135deg,#f09433,#dc2743,#bc1888)';
+/* Platform glyphs — identical to the channel badges beside the ARIA logo (top-left). */
+const PF_GLYPH = {
+  fb: 'f',
+  ig: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="3.5"/><circle cx="17.5" cy="6.5" r="1" fill="#fff"/></svg>',
+  wa: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.3A10 10 0 1 0 12 2zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.3-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9 0-1.3.7-2 1-2.3.2-.2.5-.3.7-.3h.5c.2 0 .5-.1.7.5l1 2.3c.1.2.1.4 0 .6l-.3.4-.4.5c-.1.1-.3.3-.1.6.2.4 1 1.6 2.1 2.6 1.4 1.2 2.6 1.6 2.9 1.8.4.2.6.1.8-.1l.9-1.1c.2-.3.5-.2.8-.1l2.2 1c.3.2.5.2.6.4 0 .2 0 1-.2 1.5z"/></svg>',
+};
+function pfKey(channel) {
+  const c = (channel || '').toLowerCase();
+  return (c === 'ig' || c === 'instagram') ? 'ig'
+       : (c === 'wa' || c === 'whatsapp')  ? 'wa' : 'fb';
+}
+/** Inline platform badge (colored circle + white glyph), matching the top-left icons. */
+function pfBadge(channel, extraClass = '') {
+  const k = pfKey(channel);
+  return `<span class="pf-badge pf-${k} ${extraClass}">${PF_GLYPH[k]}</span>`;
+}
+/** Corner pip on an avatar — same platform glyph, pip-sized. */
+function pfPip(channel) {
+  const k = pfKey(channel);
+  return `<span class="pf-mini ${k}">${PF_GLYPH[k]}</span>`;
 }
 
 function renderLeadGrid() {
@@ -751,32 +769,131 @@ function renderLeadGrid() {
       ? `<div class="lc-owner" title="Owner: ${owner.name}"><div class="lc-owner-av"><img src="${owner.avatar}" alt=""></div>${owner.name}</div>`
       : `<div class="lc-owner" style="color:var(--ink-4)" title="Unassigned">· unassigned</div>`;
     return `
-      <div class="lead-card">
+      <div class="lead-card" data-lead-id="${l.id}" role="button" tabindex="0" title="View ${esc(l.name)}'s details">
         <span class="lc-quality-dot lc-q-${l.quality}"></span>
         ${ownerPill}
         <div class="lc-avatar">
           <img src="${l.avatar}" alt="">
-          <span class="pf-mini" style="${pfDotStyle(l.channel)}"></span>
+          ${pfPip(l.channel)}
         </div>
         <div class="lc-name">${esc(l.name)}</div>
         <div class="lc-role">${esc(l.role)} · ${esc(l.company)}</div>
         <div class="lc-grid">
           <div class="lc-stat">
             <span class="lc-stat-lbl">From</span>
-            <span class="lc-channel" style="${pfDotStyle(l.channel)}"></span>
+            <span class="lc-stat-val">${pfBadge(l.channel, 'pf-badge--xs')}${l.channel === 'instagram' ? 'Instagram' : 'Facebook'}</span>
+          </div>
+          <div class="lc-stat">
+            <span class="lc-stat-lbl">Score</span>
+            <span class="lc-stat-val">${l.score}</span>
           </div>
           <div class="lc-stat">
             <span class="lc-stat-lbl">Sector</span>
             <span class="lc-stat-val">${TYPE_LBL[l.lead_type] || l.lead_type}</span>
           </div>
-          <div class="lc-stat">
-            <span class="lc-stat-lbl">Value</span>
-            <span class="lc-stat-val">${fmtMoney(l.pipeline)}</span>
-          </div>
         </div>
       </div>
     `;
   }).join('');
+
+  $$('#lead-grid .lead-card').forEach(el => {
+    el.addEventListener('click', () => openLeadDetail(+el.dataset.leadId));
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLeadDetail(+el.dataset.leadId); }
+    });
+  });
+}
+
+/* ══════════════════════ LEAD DETAIL ══════════════════════ */
+async function openLeadDetail(id) {
+  const overlay = $('leaddetail-overlay');
+  const body    = $('leaddetail-body');
+  if (!overlay || !body) return;
+  body.innerHTML = `<p class="modal-sub">Loading…</p>`;
+  overlay.hidden = false;
+  try {
+    const res  = await fetch(`/leads/${id}`);
+    const data = await res.json();
+    if (data.error) { body.innerHTML = `<p class="modal-sub">${esc(data.error)}</p>`; return; }
+    renderLeadDetail(data);
+  } catch (_) {
+    body.innerHTML = `<p class="modal-sub">Couldn't load this lead. Is the server running?</p>`;
+  }
+}
+
+function closeLeadDetail() { const o = $('leaddetail-overlay'); if (o) o.hidden = true; }
+
+function renderLeadDetail(data) {
+  const l = data.lead || {};
+  const src = (l.source || '').toLowerCase();
+  const srcName = (src === 'ig' || src === 'instagram') ? 'Instagram'
+                : (src === 'fb' || src === 'facebook') ? 'Facebook'
+                : (l.source || 'Unknown');
+  const dotCh = srcName === 'Instagram' ? 'instagram' : 'facebook';
+  const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+  const yn = v => v === true ? 'Yes' : v === false ? 'No' : '—';
+  const row = (k, v) => `<div class="ld-row"><span class="ld-k">${k}</span><span class="ld-v">${v}</span></div>`;
+
+  const bd = l.score_breakdown || {};
+  const bar = (label, val, max, tint) => {
+    const pct  = Math.max(0, Math.min(100, Math.round((Math.max(0, val) / max) * 100)));
+    const sign = val < 0 ? '−' : '';
+    return `<div class="ld-bar-row">
+      <span class="ld-bar-lbl">${label}</span>
+      <span class="ld-bar-track"><span class="ld-bar-fill" style="width:${pct}%;background:${tint}"></span></span>
+      <span class="ld-bar-val">${sign}${Math.abs(val)}<small>/${max}</small></span>
+    </div>`;
+  };
+
+  const interactions = data.interactions || [];
+  const lastMsgs = interactions.slice(-4).map(i => {
+    const who  = i.direction === 'inbound' ? 'Lead' : (i.handled_by === 'human' ? 'Team' : 'ARIA');
+    const full = i.message || '';
+    return `<div class="ld-msg"><b>${who}:</b> ${esc(full.replace(/\n+/g,' ').slice(0,90))}${full.length>90?'…':''}</div>`;
+  }).join('') || `<div class="ld-msg" style="color:var(--ink-4)">No messages yet — the first-touch email is queued for approval.</div>`;
+
+  $('leaddetail-body').innerHTML = `
+    <div class="ld-head">
+      <div class="ld-name">${esc(l.name || 'Unknown')}</div>
+      <span class="ld-badge ld-q-${l.quality}">${esc(l.quality || '')} · ${l.score ?? 0}</span>
+    </div>
+    <div class="ld-sub">${esc(l.type || '—')} · ${esc(l.company || '—')}</div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Where they came from</div>
+      ${row('Source', `${pfBadge(dotCh, 'pf-badge--xs')} ${esc(srcName)} lead ad`)}
+      ${row('Location', esc(l.state || '—'))}
+      ${row('Arrived', fmtDT(l.created_at))}
+    </div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Contact</div>
+      ${row('Email', esc(l.email || '—'))}
+      ${row('Phone', esc(l.phone || '—'))}
+    </div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Profile</div>
+      ${row('Team size', l.team_size ?? '—')}
+      ${row('Uses software', yn(l.uses_software) + (l.current_software ? ` (${esc(l.current_software)})` : ''))}
+      ${row('Open to new platform', yn(l.open_to_platform))}
+      ${row('Website', esc(l.company_website || '—'))}
+      ${row('Wants demo', yn(l.willing_for_demo) + (l.demo_preference ? ` — ${esc(l.demo_preference)}` : ''))}
+    </div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Why this score?</div>
+      ${bar('Profile · type, team, software', bd.profile ?? 0, bd.profile_max ?? 40, '#6c5ce7')}
+      ${bar('Form intent · from the ad form', bd.form_intent ?? 0, bd.form_intent_max ?? 30, '#00b894')}
+      ${bar('Engagement · from chat', bd.engagement ?? 0, bd.engagement_max ?? 30, '#fdcb6e')}
+      <div class="ld-score-note">Profile &amp; form intent come straight from the lead's ad-form answers (so a lead has a score before any email or chat). Engagement moves as they interact.</div>
+    </div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Recent activity</div>
+      ${lastMsgs}
+    </div>
+  `;
 }
 
 function renderSourceMix() {
@@ -921,7 +1038,7 @@ function renderConvList() {
       <li class="conv-list-item ${idx === activeConv ? 'active' : ''}" data-i="${idx}">
         <div class="cli-avatar">
           <img src="${c.lead.avatar}" alt="">
-          <span class="pf-mini ${c.lead.channel === 'facebook' ? 'fb':'ig'}"></span>
+          ${pfPip(c.lead.channel)}
         </div>
         <div class="cli-body">
           <div class="cli-row">
@@ -1874,6 +1991,9 @@ function wireLeadsView() {
   $('addlead-cancel')?.addEventListener('click', closeAddLead);
   $('addlead-form')?.addEventListener('submit', submitAddLead);
   $('addlead-overlay')?.addEventListener('click', e => { if (e.target.id === 'addlead-overlay') closeAddLead(); });
+
+  $('leaddetail-close')?.addEventListener('click', closeLeadDetail);
+  $('leaddetail-overlay')?.addEventListener('click', e => { if (e.target.id === 'leaddetail-overlay') closeLeadDetail(); });
 
   $('ov-search-btn')?.addEventListener('click', openSearch);
   $('leads-search-btn')?.addEventListener('click', openSearch);

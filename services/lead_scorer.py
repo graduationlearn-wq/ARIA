@@ -119,6 +119,29 @@ def compute_initial_score(lead: Lead) -> int:
     return max(0, min(100, profile + intent))
 
 
+def score_breakdown(lead: Lead) -> dict:
+    """
+    Explain how a lead's 0–100 score is composed, for the dashboard.
+
+    profile     — set from the ad-form answers (type, team size, software)   max 40
+    form_intent — "willing to evaluate" (+20) + "open to platform" (+10)      max 30
+    engagement  — accrued during chat (demo +15, objection -5..-10, …)        ± up to 30
+    """
+    profile = _profile_score(lead)
+    form_intent = _form_intent_score(lead)
+    base = compute_initial_score(lead)               # profile + form intent, clamped
+    engagement = (lead.lead_score or 0) - base       # whatever chat has added/removed
+    return {
+        "profile": profile,
+        "profile_max": 40,
+        "form_intent": form_intent,
+        "form_intent_max": 30,
+        "engagement": engagement,
+        "engagement_max": 30,
+        "total": lead.lead_score or 0,
+    }
+
+
 def apply_engagement_delta(current_score: int, event: str) -> int:
     """
     Update score when an interaction event occurs.

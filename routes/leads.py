@@ -18,6 +18,7 @@ from sqlalchemy import func
 from database import get_db
 from models.lead import Lead
 from models.interaction import Interaction
+from services.lead_scorer import score_breakdown
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
@@ -299,6 +300,7 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
             # ── Scoring & status ──────────────────────────────────────────────
             "score": lead.lead_score,
             "quality": lead.lead_quality,
+            "score_breakdown": score_breakdown(lead),
             "status": lead.status,
             "current_intent": lead.current_intent,
             # ── Demo interest ─────────────────────────────────────────────────
