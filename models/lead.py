@@ -70,6 +70,7 @@ class Lead(Base):
     current_software: Mapped[str] = mapped_column(String(200), nullable=True)
     company_website: Mapped[str] = mapped_column(String(300), nullable=True)
     demo_preference: Mapped[str] = mapped_column(String(200), nullable=True)  # preferred call time
+    meet_link: Mapped[str] = mapped_column(String(300), nullable=True)        # saved Google Meet link for this lead
 
     # ── Re-engagement (set when lead says "maybe later") ──────────────────────
     # Scheduler checks this: if re_engage_after <= now → send re-engagement nudge

@@ -27,3 +27,23 @@ def init_db():
     """Create all tables. Called once on startup."""
     from models import lead, interaction, escalation, knowledge_base, demo  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _run_light_migrations()
+
+
+def _run_light_migrations():
+    """
+    Idempotent column adds for existing SQLite DBs.
+    create_all() creates new tables but never ALTERs existing ones, so new
+    nullable columns need a tiny migration to land on a DB that predates them.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    try:
+        lead_cols = {c["name"] for c in insp.get_columns("leads")}
+    except Exception:
+        return  # table not present yet (fresh DB already has the column)
+
+    if "meet_link" not in lead_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN meet_link VARCHAR(300)"))

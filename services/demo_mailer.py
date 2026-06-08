@@ -58,8 +58,7 @@ Talk soon! 😊
 The BeyondSure Team
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Questions? Reply to this email or chat with us:
-{settings.base_url}/chat/{lead.chat_token}
+Questions? Reply to this email or [chat with us]({settings.base_url}/chat/{lead.chat_token}).
 """.strip()
 
     sent = send_email(lead.email, subject, body)

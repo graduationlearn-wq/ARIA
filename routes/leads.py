@@ -91,7 +91,9 @@ def list_leads(
             "status": l.status,
             "current_intent": l.current_intent,
             "willing_for_demo": l.willing_for_demo,
+            "demo_preference": l.demo_preference,
             "human_priority": l.human_priority,
+            "meet_link": l.meet_link,
             "created_at": l.created_at,
             "last_interaction_at": l.last_interaction_at,
         }
@@ -105,6 +107,25 @@ class NotesRequest(BaseModel):
 class StatusRequest(BaseModel):
     status: str
     reason: str | None = None
+
+class MeetRequest(BaseModel):
+    link: str
+
+
+@router.post("/{lead_id}/meet")
+def set_meet_link(lead_id: int, body: MeetRequest, db: Session = Depends(get_db)):
+    """
+    Save (or clear) a Google Meet link for this lead so the team can rejoin
+    the same meeting next time from the Inbox video-call button.
+    """
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        return {"error": "Lead not found"}
+    link = body.link.strip()
+    # Basic sanity check — only accept http(s) links, else clear
+    lead.meet_link = link if link.startswith(("http://", "https://")) else None
+    db.commit()
+    return {"id": lead.id, "meet_link": lead.meet_link}
 
 
 @router.post("/{lead_id}/priority")
@@ -306,6 +327,7 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
             # ── Demo interest ─────────────────────────────────────────────────
             "willing_for_demo": lead.willing_for_demo,
             "demo_preference": lead.demo_preference,
+            "meet_link": lead.meet_link,
             # ── Compliance & overrides ────────────────────────────────────────
             "opt_out": lead.opt_out,
             "human_priority": lead.human_priority,

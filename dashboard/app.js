@@ -60,6 +60,9 @@ function mapApiLead(l) {
     current_intent: l.current_intent,
     chat_url: l.chat_url,
     human_priority: l.human_priority,
+    meet_link: l.meet_link || null,
+    demo_preference: l.demo_preference || null,
+    email: l.email || '',
   };
 }
 
@@ -391,6 +394,7 @@ const ICONS = {
   chevron: `<svg class="pri-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>`,
   more:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>`,
   phone:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  video:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m23 7-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`,
   star:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
   edit:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   x:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
@@ -1099,6 +1103,67 @@ async function togglePriority(c) {
   } catch { toast('Could not update priority', true); }
 }
 
+/** Next weekday (skips Sat/Sun), used as the default suggested slot. */
+function nextBusinessDay() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** Google Calendar "create event" link, pre-filled with the lead + their preferred time. */
+function buildCalendarUrl(c) {
+  const pad = n => String(n).padStart(2, '0');
+  const day = nextBusinessDay();
+  const ymd = `${day.getFullYear()}${pad(day.getMonth() + 1)}${pad(day.getDate())}`;
+  const dates = `${ymd}T110000/${ymd}T113000`;  // default 11:00–11:30 IST; team adjusts
+  const pref = c.lead.demo_preference;
+  const details =
+    `Product demo for ${c.lead.name}.` +
+    (pref ? `\n\nLead's preferred time: ${pref} — adjust the slot to match.` : '') +
+    `\n\nClick "Add Google Meet video conferencing", then send the invite.`;
+  const p = new URLSearchParams({
+    action: 'TEMPLATE',
+    text:   `BeyondSure Demo — ${c.lead.name}`,
+    dates,
+    ctz:    'Asia/Kolkata',
+    details,
+  });
+  if (c.lead.email) p.set('add', c.lead.email);  // invites the lead
+  return 'https://calendar.google.com/calendar/render?' + p.toString();
+}
+
+async function startMeet(c) {
+  // Already scheduled → rejoin the saved Meet directly.
+  if (c.lead.meet_link) { window.open(c.lead.meet_link, '_blank', 'noopener'); return; }
+
+  // Not scheduled yet → open a pre-filled Google Calendar invite (lead + their
+  // preferred time). The team sets the slot, adds Google Meet, and sends it.
+  window.open(buildCalendarUrl(c), '_blank', 'noopener');
+  const link = prompt(
+    `A Google Calendar invite opened, pre-filled for ${c.lead.name}` +
+    (c.lead.demo_preference ? ` (prefers: ${c.lead.demo_preference})` : '') + `.\n\n` +
+    `Set the time, click "Add Google Meet", and send it — then paste the Meet ` +
+    `link here to save it for rejoining (leave blank to skip):`
+  );
+  if (!link) return;
+  const url = link.trim();
+  if (!/^https?:\/\//.test(url)) { toast("That doesn't look like a link — not saved", true); return; }
+  try {
+    const r = await fetch(`/leads/${c.lead_id}/meet`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link: url }),
+    });
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    c.lead.meet_link = d.meet_link;
+    const L = LEADS.find(x => x.id === c.lead_id); if (L) L.meet_link = d.meet_link;  // keep master copy in sync
+    renderConvThread();
+    toast(`Meeting saved for ${c.lead.name}`);
+  } catch { toast('Could not save the meeting link', true); }
+}
+
 function renderConvThread() {
   const c = CONVERSATIONS[activeConv];
   if (!c) return;
@@ -1113,10 +1178,12 @@ function renderConvThread() {
     </div>
     <div class="ch-tools">
       <button class="icon-btn sm" id="ch-call" title="${phone ? 'Call ' + esc(phone) : 'No phone on file'}" ${phone ? '' : 'disabled'}>${ICONS.phone}</button>
+      <button class="icon-btn sm ${c.lead.meet_link ? 'has-meet' : ''}" id="ch-meet" title="${c.lead.meet_link ? 'Join scheduled Google Meet' : 'Schedule a Google Meet'}">${ICONS.video}</button>
       <button class="icon-btn sm ${starred ? 'starred' : ''}" id="ch-star" title="${starred ? 'Priority — click to clear' : 'Flag as priority'}">${ICONS.star}</button>
     </div>
   `;
   if (phone) $('ch-call')?.addEventListener('click', () => { window.location.href = 'tel:' + phone; });
+  $('ch-meet')?.addEventListener('click', () => startMeet(c));
   $('ch-star')?.addEventListener('click', () => togglePriority(c));
 
   // Lazy-load messages when this conversation hasn't been opened yet

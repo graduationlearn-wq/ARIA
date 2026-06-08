@@ -80,13 +80,16 @@ def _parse_lead_type(val: str | None) -> str:
 # ── Helper: append CTA buttons to email body ─────────────────────────────────
 def _append_cta(body: str, chat_url: str, whatsapp_url: str | None) -> str:
     """
-    Appends the two CTA links (chat + WhatsApp) to the plain-text email body.
-    The email_sender already wraps this in HTML, so the links become clickable.
+    Appends the two CTA links (chat + WhatsApp) to the email body.
+
+    Links use [text](url) markdown — email_sender renders them as hidden
+    hyperlinks in the HTML part (raw URL never shown) while keeping a
+    'text: url' fallback in the plain-text part.
     """
     cta = f"\n\n──────────────────────────────\n"
-    cta += f"💬  Chat with us now (instant): {chat_url}\n"
+    cta += f"💬  [Chat with us now (instant)]({chat_url})\n"
     if whatsapp_url:
-        cta += f"📱  Continue on WhatsApp:       {whatsapp_url}\n"
+        cta += f"📱  [Continue on WhatsApp]({whatsapp_url})\n"
     cta += "──────────────────────────────"
     return body + cta
 

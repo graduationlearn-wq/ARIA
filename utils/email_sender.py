@@ -14,10 +14,41 @@ For Gmail (dev/testing):
   SMTP_PASSWORD=xxxx xxxx xxxx xxxx   ← App Password (not your real password)
 """
 
+import re
+import html as _html
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
+
+
+# Markdown-style link:  [visible text](https://url)
+_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+
+
+def _links_to_plain(body: str) -> str:
+    """For the plain-text part: render [text](url) as 'text: url' (URL stays usable)."""
+    return _MD_LINK.sub(lambda m: f"{m.group(1)}: {m.group(2)}", body)
+
+
+def _links_to_html(body: str) -> str:
+    """For the HTML part: render [text](url) as a styled <a>, hiding the raw URL."""
+    links: list[tuple[str, str]] = []
+
+    def _stash(m: re.Match) -> str:
+        links.append((m.group(1), m.group(2)))
+        return f"\x00L{len(links) - 1}\x00"
+
+    tmp = _MD_LINK.sub(_stash, body)
+    tmp = _html.escape(tmp).replace("\n", "<br>")
+    for i, (text, url) in enumerate(links):
+        anchor = (
+            f'<a href="{_html.escape(url, quote=True)}" '
+            f'style="color:#1e3a8a;font-weight:600;text-decoration:none;">'
+            f'{_html.escape(text)}</a>'
+        )
+        tmp = tmp.replace(f"\x00L{i}\x00", anchor)
+    return tmp
 
 
 def send_email(to_address: str, subject: str, body: str) -> bool:
@@ -39,11 +70,11 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
     msg["From"] = f"{settings.email_from_name} <{from_address}>"
     msg["To"] = to_address
 
-    # Plain text version
-    msg.attach(MIMEText(body, "plain"))
+    # Plain text version — markdown links become "text: url" so they stay usable
+    msg.attach(MIMEText(_links_to_plain(body), "plain"))
 
-    # Simple HTML version (same content, slightly formatted)
-    html_body = body.replace("\n", "<br>")
+    # HTML version — markdown links become hidden hyperlinks (raw URL not shown)
+    html_body = _links_to_html(body)
     html = f"""
     <html><body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #2c3e50;">
         {html_body}

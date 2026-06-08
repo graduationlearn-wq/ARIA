@@ -1306,6 +1306,9 @@ body {
 /* Priority star (Inbox header) */
 .icon-btn.starred { color: var(--amber); }
 .icon-btn.starred svg { fill: var(--amber); }
+/* video-call button turns green once a Google Meet link is saved for the lead */
+.icon-btn.has-meet { color: #16a34a; }
+.icon-btn.has-meet svg { stroke: #16a34a; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━ INBOX COMPOSER STATES ━━━━━━━━━━━━━━━ */
 /* Disabled — ARIA is handling */
