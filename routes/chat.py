@@ -1315,7 +1315,9 @@ def _log_outbound(lead: Lead, text: str, intent: str, db: Session):
 
 def _update_status_from_intent(lead: Lead, intent: str):
     """Advance lead status based on what they're expressing."""
-    if lead.status in ("lost", "needs_human", "contacted"):
+    # Don't auto-downgrade leads a human has moved into a sales stage.
+    from services.stages import HUMAN_STAGES
+    if lead.status in ({"lost", "needs_human", "contacted", "converted"} | HUMAN_STAGES):
         return  # don't downgrade
     status_map = {
         "demo_request":    "needs_human",

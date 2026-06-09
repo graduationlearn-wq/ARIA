@@ -29,6 +29,125 @@ function avatarUrl(name) {
 }
 
 /** Convert /leads/ API item → dashboard LEAD format */
+/* ══════════════════════ AUTH & HIERARCHY ══════════════════════ */
+let CURRENT_USER = null;          // logged-in user {id,name,email,role,...}
+let VIEWABLE = [];                // users this user can drill into
+let VIEW_AS = null;               // user_id being viewed, or null = own scope
+let ASSIGNABLE_OWNERS = [];       // employees this user can reassign leads to
+
+const roleLabel = r => r === 'admin' ? 'Admin' : r === 'manager' ? 'Manager' : 'Employee';
+const asParam = () => VIEW_AS ? `?as=${VIEW_AS}` : '';
+
+async function checkAuth() {
+  try {
+    const r = await fetch('/auth/me');
+    if (!r.ok) return false;
+    const d = await r.json();
+    CURRENT_USER = d.user; VIEWABLE = d.viewable || [];
+    return true;
+  } catch { return false; }
+}
+
+async function doLogin(email, password) {
+  const r = await fetch('/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.detail || 'Invalid email or password');
+  }
+  const d = await r.json();
+  CURRENT_USER = d.user; VIEWABLE = d.viewable || [];
+}
+
+async function loadAssignableOwners() {
+  ASSIGNABLE_OWNERS = [];
+  if (!CURRENT_USER || CURRENT_USER.role === 'employee') return;
+  try { const r = await fetch('/leads/assignable-owners'); if (r.ok) ASSIGNABLE_OWNERS = await r.json(); } catch {}
+}
+
+function renderIdentity() {
+  if (!CURRENT_USER) return;
+  const av = avatarUrl(CURRENT_USER.avatar_seed || CURRENT_USER.name);
+  if ($('me-avatar'))         $('me-avatar').src = av;
+  if ($('avatar-menu-img'))   $('avatar-menu-img').src = av;
+  if ($('avatar-menu-name'))  $('avatar-menu-name').textContent = CURRENT_USER.name;
+  if ($('avatar-menu-role'))  $('avatar-menu-role').textContent = `${roleLabel(CURRENT_USER.role)} · ${CURRENT_USER.email}`;
+  renderViewAs();
+}
+
+function renderViewAs() {
+  const host = $('viewas');
+  if (!host) return;
+  if (!CURRENT_USER || CURRENT_USER.role === 'employee') { host.innerHTML = ''; return; }
+  const allLabel = CURRENT_USER.role === 'admin' ? 'Everyone' : 'My team';
+  const opts = [`<option value="">${allLabel}</option>`].concat(
+    VIEWABLE.filter(u => u.id !== CURRENT_USER.id).map(u =>
+      `<option value="${u.id}" ${String(VIEW_AS) === String(u.id) ? 'selected' : ''}>${esc(u.name)} · ${roleLabel(u.role)}</option>`)
+  );
+  host.innerHTML = `<select id="viewas-select" class="viewas-select" title="Whose pipeline to view">${opts.join('')}</select>`;
+  $('viewas-select').addEventListener('change', async e => {
+    VIEW_AS = e.target.value || null;
+    await loadLiveData();
+    renderAll();
+  });
+}
+
+function showLogin(msg) {
+  const o = $('login-overlay'); if (o) o.hidden = false;
+  const e = $('login-error'); if (e) { e.hidden = !msg; if (msg) e.textContent = msg; }
+}
+function hideLogin() { const o = $('login-overlay'); if (o) o.hidden = true; }
+
+async function loadAuthConfig() {
+  try { const r = await fetch('/auth/config'); if (r.ok) return (await r.json()).provider || 'local'; } catch {}
+  return 'local';
+}
+
+function applyLoginMode(provider) {
+  const local = $('login-local'), a0 = $('login-auth0'), sub = $('login-sub');
+  if (provider === 'auth0') {
+    if (local) local.hidden = true;
+    if (a0) { a0.hidden = false; a0.onclick = () => { window.location.href = '/auth/login'; }; }
+    if (sub) sub.textContent = 'Sign in with your BeyondSure (Auth0) account.';
+  } else {
+    if (local) local.hidden = false;
+    if (a0) a0.hidden = true;
+  }
+}
+
+function wireLogin() {
+  const f = $('login-form'); if (!f) return;
+  f.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const email = ($('login-email').value || '').trim();
+    const password = $('login-password').value || '';
+    const btn = $('login-submit'); const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      await doLogin(email, password);
+      hideLogin();
+      await bootDashboard();
+    } catch (err) {
+      showLogin(err.message || 'Invalid email or password');
+    } finally { btn.disabled = false; btn.textContent = orig; }
+  });
+}
+
+/** Render identity + load data once the user is authenticated. */
+async function bootDashboard() {
+  renderIdentity();
+  await loadAssignableOwners();
+  const fe = CONVERSATIONS.findIndex(c => c.escalated);
+  if (fe >= 0) activeConv = fe;
+  renderAll();
+  await Promise.all([loadLiveData(), loadConfig()]);
+  const le = CONVERSATIONS.findIndex(c => c.escalated);
+  activeConv = le >= 0 ? le : 0;
+  renderAll();
+}
+
 function mapApiLead(l) {
   const dateStr = l.created_at ? l.created_at.split('T')[0] : new Date().toISOString().split('T')[0];
   const t = l.type || 'agent';
@@ -63,6 +182,9 @@ function mapApiLead(l) {
     meet_link: l.meet_link || null,
     demo_preference: l.demo_preference || null,
     email: l.email || '',
+    stage: l.stage || 'new',
+    owner_id: l.owner_id || null,
+    owner_name: l.owner_name || null,
   };
 }
 
@@ -111,9 +233,10 @@ async function loadLiveData() {
   if (!isServed) { setLiveIndicator(false, null); return; }
 
   try {
+    const asQ = VIEW_AS ? `?as=${VIEW_AS}` : '';
     const [statsRes, leadsRes, queueRes] = await Promise.all([
-      fetch('/leads/stats'),
-      fetch('/leads/?limit=200'),
+      fetch(`/leads/stats${asQ}`),
+      fetch(`/leads/?limit=200${VIEW_AS ? `&as=${VIEW_AS}` : ''}`),
       fetch('/approval/queue'),
     ]);
     if (!statsRes.ok || !leadsRes.ok || !queueRes.ok) throw new Error('API error');
@@ -156,10 +279,11 @@ async function loadLiveData() {
 
     // Fetch analytics for the Analytics view
     try {
-      const aRes = await fetch('/leads/analytics');
+      const aRes = await fetch(`/leads/analytics${VIEW_AS ? `?as=${VIEW_AS}` : ''}`);
       if (aRes.ok) {
         const a = await aRes.json();
         ANALYTICS.funnel       = a.funnel.map(s => ({ stage: s.stage, count: s.count, pct: s.pct }));
+        ANALYTICS.stages       = (a.stages || []).map(s => ({ key: s.key, label: s.label, count: s.count }));
         ANALYTICS.sources      = a.sources;
         ANALYTICS.scoreBuckets = a.score_buckets.map(b => ({ b: b.b, n: b.n }));
         ANALYTICS.weeklyTrend  = a.weekly_trend.map(w => ({ w: w.w, leads: w.leads, demos: w.demos }));
@@ -768,9 +892,8 @@ function renderLeadGrid() {
   }
 
   $('lead-grid').innerHTML = cards.map(l => {
-    const owner = l.owner ? TEAM[l.owner] : null;
-    const ownerPill = owner
-      ? `<div class="lc-owner" title="Owner: ${owner.name}"><div class="lc-owner-av"><img src="${owner.avatar}" alt=""></div>${owner.name}</div>`
+    const ownerPill = l.owner_name
+      ? `<div class="lc-owner" title="Owner: ${esc(l.owner_name)}"><div class="lc-owner-av"><img src="${avatarUrl(l.owner_name)}" alt=""></div>${esc(l.owner_name)}</div>`
       : `<div class="lc-owner" style="color:var(--ink-4)" title="Unassigned">· unassigned</div>`;
     return `
       <div class="lead-card" data-lead-id="${l.id}" role="button" tabindex="0" title="View ${esc(l.name)}'s details">
@@ -838,6 +961,20 @@ function renderLeadDetail(data) {
   const yn = v => v === true ? 'Yes' : v === false ? 'No' : '—';
   const row = (k, v) => `<div class="ld-row"><span class="ld-k">${k}</span><span class="ld-v">${v}</span></div>`;
 
+  // Owner section — reassignable for managers/admin, read-only otherwise.
+  const canAssign = CURRENT_USER && CURRENT_USER.role !== 'employee' && ASSIGNABLE_OWNERS.length;
+  const ownerSectionHtml = canAssign
+    ? `<div class="ld-section">
+         <div class="ld-section-title">Owner</div>
+         <select class="ld-stage-select" id="ld-owner">
+           ${ASSIGNABLE_OWNERS.map(o => `<option value="${o.id}" ${l.owner_id === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
+         </select>
+         <div class="ld-score-note">The employee who owns this lead. Reassign to balance the team.</div>
+       </div>`
+    : (l.owner_name
+        ? `<div class="ld-section"><div class="ld-section-title">Owner</div>${row('Brought by', esc(l.owner_name))}</div>`
+        : '');
+
   const bd = l.score_breakdown || {};
   const bar = (label, val, max, tint) => {
     const pct  = Math.max(0, Math.min(100, Math.round((Math.max(0, val) / max) * 100)));
@@ -862,6 +999,16 @@ function renderLeadDetail(data) {
       <span class="ld-badge ld-q-${l.quality}">${esc(l.quality || '')} · ${l.score ?? 0}</span>
     </div>
     <div class="ld-sub">${esc(l.type || '—')} · ${esc(l.company || '—')}</div>
+
+    <div class="ld-section">
+      <div class="ld-section-title">Pipeline stage</div>
+      <select class="ld-stage-select" id="ld-stage">
+        ${STAGES.map(([k, lbl]) => `<option value="${k}" ${l.stage === k ? 'selected' : ''}>${lbl}</option>`).join('')}
+      </select>
+      <div class="ld-score-note">ARIA sets the early stages automatically. Move it forward (Negotiation → Won) as your team progresses the deal.</div>
+    </div>
+
+    ${ownerSectionHtml}
 
     <div class="ld-section">
       <div class="ld-section-title">Where they came from</div>
@@ -898,6 +1045,28 @@ function renderLeadDetail(data) {
       ${lastMsgs}
     </div>
   `;
+
+  const sel = $('ld-stage');
+  if (sel) sel.addEventListener('change', () => setLeadStage(l.id, sel.value, l.name || 'Lead'));
+
+  const osel = $('ld-owner');
+  if (osel) osel.addEventListener('change', () => reassignOwner(l.id, +osel.value));
+}
+
+async function reassignOwner(id, ownerId) {
+  try {
+    const r = await fetch(`/leads/${id}/owner`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_id: ownerId }),
+    });
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    const L = LEADS.find(x => x.id === id);
+    if (L) { L.owner_id = d.owner_id; L.owner_name = d.owner_name; }
+    toast(`Reassigned to ${d.owner_name}`);
+    await loadLiveData();
+    renderAll();
+  } catch { toast('Could not reassign this lead', true); }
 }
 
 function renderSourceMix() {
@@ -1469,6 +1638,53 @@ function renderInsights() {
   }).join('');
 }
 
+/* ══════════════════════ LEAD STAGES ══════════════════════ */
+const STAGES = [
+  ['new', 'New Lead'], ['contacted', 'Contacted'], ['interested', 'Interested'],
+  ['follow_up', 'Follow-up'], ['negotiation', 'Negotiation'], ['post_demo', 'Post Demo Follow-Up'],
+  ['post_commercial', 'Post Commercial Follow-Up'], ['parked', 'Parked'], ['won', 'Won'], ['lost', 'Lost'],
+];
+const STAGE_LBL = Object.fromEntries(STAGES);
+const STAGE_TINT = {
+  new:'#eef2ff', contacted:'#e0e7ff', interested:'#ede9fe', follow_up:'#fef9c3',
+  negotiation:'#ffe4e6', post_demo:'#dbeafe', post_commercial:'#dcfce7',
+  parked:'#f1f5f9', won:'#d1fae5', lost:'#fee2e2',
+};
+const STAGE_FG = {
+  new:'#4338ca', contacted:'#4338ca', interested:'#6d28d9', follow_up:'#a16207',
+  negotiation:'#be123c', post_demo:'#1d4ed8', post_commercial:'#15803d',
+  parked:'#475569', won:'#047857', lost:'#b91c1c',
+};
+
+function renderStages() {
+  const host = $('lead-stages');
+  if (!host) return;
+  const stages = (ANALYTICS.stages && ANALYTICS.stages.length) ? ANALYTICS.stages : [];
+  host.innerHTML = stages.map(s => `
+    <div class="stage-card">
+      <span class="stage-chip" style="background:${STAGE_TINT[s.key] || '#f1f5f9'};color:${STAGE_FG[s.key] || '#475569'}">${esc(s.label)}</span>
+      <span class="stage-num">${s.count}</span>
+      <span class="stage-sub">leads</span>
+    </div>`).join('');
+}
+
+async function setLeadStage(id, stage, name) {
+  try {
+    const r = await fetch(`/leads/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: stage }),
+    });
+    if (!r.ok) throw new Error();
+    const L = LEADS.find(x => x.id === id); if (L) L.stage = stage;
+    const c = CONVERSATIONS.find(x => x.lead_id === id); if (c && c.lead) c.lead.stage = stage;
+    toast(`${name} → ${STAGE_LBL[stage] || stage}`);
+    // refresh stage counts + grids from the server
+    await loadLiveData();
+    renderAll();
+  } catch { toast('Could not update stage', true); }
+}
+
 function renderFunnel() {
   $('funnel').innerHTML = ANALYTICS.funnel.map(s => `
     <div class="funnel-row">
@@ -1796,7 +2012,7 @@ function wireTopbar() {
       if (a === 'settings') openSettings('knowledge');
       else if (a === 'kb')  window.open('/admin/kb', '_blank');
       else if (a === 'docs') openSettings('docs');
-      else if (a === 'signout') alert('Sign-out is a placeholder — auth is added at deployment.');
+      else if (a === 'signout') { fetch('/auth/logout', { method: 'POST' }).finally(() => location.reload()); }
     });
   });
 
@@ -2088,6 +2304,7 @@ function renderAll() {
   renderActivity();
   renderAnaKpis();
   renderInsights();
+  renderStages();
   renderFunnel();
   renderSourceChart();
   renderHistogram();
@@ -2099,7 +2316,6 @@ function renderAll() {
 
 /* ══════════════════════ BOOT ══════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
-  renderMe();
   wireNav();
   wireTopbar();
   wireOverviewTabs();
@@ -2107,21 +2323,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireLeadsView();
   wireApprovals();
   wireOverviewChart();
-
-  // Inbox — default to first escalated thread (shows ARIA→human handoff)
-  const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
-  if (firstEscalated >= 0) activeConv = firstEscalated;
   wireConvFilters();
+  wireLogin();
 
-  // 1. Render immediately with sample data (instant visual — no blank flash)
-  renderAll();
+  const isServed = window.location.protocol !== 'file:';
 
-  // 2. Load live data + config from the API, then re-render with real numbers
-  await Promise.all([loadLiveData(), loadConfig()]);
-  // Live data rebuilt CONVERSATIONS — re-select a valid thread (prefer escalated)
-  const liveEscalated = CONVERSATIONS.findIndex(c => c.escalated);
-  activeConv = liveEscalated >= 0 ? liveEscalated : 0;
-  renderAll();
+  // ── Auth gate (only when served by the API) ──
+  if (isServed) {
+    const ok = await checkAuth();
+    if (!ok) {
+      applyLoginMode(await loadAuthConfig());  // local form vs Auth0 button
+      showLogin();
+      return;                                  // wait for login → bootDashboard()
+    }
+    await bootDashboard();
+  } else {
+    // file:// sample mode — no server, keep the placeholder identity
+    renderMe();
+    const firstEscalated = CONVERSATIONS.findIndex(c => c.escalated);
+    if (firstEscalated >= 0) activeConv = firstEscalated;
+    renderAll();
+  }
 
   // Refresh button
   const refreshBtn = $('refresh-btn');

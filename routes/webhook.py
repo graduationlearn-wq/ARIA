@@ -28,6 +28,7 @@ from services.message_builder import build_first_touch, build_subject_line
 from services.intent_classifier import classify_intent, should_escalate
 from services.kb_lookup import search_kb, get_answer_for_intent
 from services.llm import generate_draft
+from services.auth_service import next_owner_id
 from utils.email_sender import send_email
 from config import settings
 
@@ -146,6 +147,7 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         channel="email",
         channel_id=payload.email,
         consent_logged_at=datetime.now(timezone.utc),
+        owner_id=next_owner_id(db),  # round-robin to the next employee
     )
     db.add(lead)
     db.flush()  # get lead.id before commit

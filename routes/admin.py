@@ -18,8 +18,10 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.knowledge_base import KnowledgeBase
 from config import settings
+from routes.auth import get_current_user
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"],
+                   dependencies=[Depends(get_current_user)])
 
 
 # ── Config / system status (no secrets) ─────────────────────────────────────────

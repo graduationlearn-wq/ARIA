@@ -15,14 +15,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from database import init_db
-from routes import webhook, leads, approval, chat, admin
+from config import settings
+from database import init_db, SessionLocal
+from routes import webhook, leads, approval, chat, admin, auth
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
 from services.kb_seeder import seed_kb
+from services.auth_service import seed_users, assign_unowned_leads
 
 # ── Background scheduler (follow-up jobs) ────────────────────────────────────
 _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
@@ -37,9 +40,16 @@ _scheduler.add_job(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: init DB, seed KB, start scheduler.  Shutdown: stop scheduler."""
+    """Startup: init DB, seed KB + users, start scheduler.  Shutdown: stop scheduler."""
     init_db()
     seed_kb()
+    # Seed the 3-level demo org and backfill ownership on any existing leads.
+    _db = SessionLocal()
+    try:
+        seed_users(_db)
+        assign_unowned_leads(_db)
+    finally:
+        _db.close()
     _scheduler.start()
     set_scheduler(_scheduler)
     print("=" * 57)
@@ -66,8 +76,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Signed session cookie (powers login). Same-origin SPA → cookie sent automatically.
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
+
 
 # ── Register routes ───────────────────────────────────────────────────────────
+app.include_router(auth.router)
 app.include_router(webhook.router)
 app.include_router(leads.router)
 app.include_router(approval.router)

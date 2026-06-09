@@ -25,7 +25,7 @@ def get_db():
 
 def init_db():
     """Create all tables. Called once on startup."""
-    from models import lead, interaction, escalation, knowledge_base, demo  # noqa: F401
+    from models import lead, interaction, escalation, knowledge_base, demo, user  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _run_light_migrations()
 
@@ -47,3 +47,6 @@ def _run_light_migrations():
     if "meet_link" not in lead_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE leads ADD COLUMN meet_link VARCHAR(300)"))
+    if "owner_id" not in lead_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE leads ADD COLUMN owner_id INTEGER"))

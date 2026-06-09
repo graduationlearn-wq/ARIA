@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, Float, Text, func
+from sqlalchemy import String, Integer, Boolean, DateTime, Float, Text, func, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -60,6 +60,10 @@ class Lead(Base):
     )
     chat_opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     alert_sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    # ── Ownership ─────────────────────────────────────────────────────────────
+    # The employee who owns this lead (round-robin on intake; reassignable).
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     # ── Human override ────────────────────────────────────────────────────────
     # Team members can manually boost a lead and leave notes

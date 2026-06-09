@@ -13,6 +13,8 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base, get_db
 from main import app
+from models.user import User
+from routes.auth import get_current_user
 
 # ── In-memory test database ───────────────────────────────────────────────────
 
@@ -60,7 +62,12 @@ def client(db):
         finally:
             pass
 
+    # Tests run as an admin (no login flow) so existing assertions see all data.
+    admin = User(id=1, name="Test Admin", email="admin@test", role="admin",
+                 password_hash="x", is_active=True)
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: admin
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

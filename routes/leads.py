@@ -10,7 +10,7 @@ Endpoints:
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -18,29 +18,50 @@ from sqlalchemy import func
 from database import get_db
 from models.lead import Lead
 from models.interaction import Interaction
+from models.user import User
 from services.lead_scorer import score_breakdown
+from services.stages import (
+    STAGE_ORDER, STAGE_LABELS, FUNNEL_TRACK, lead_stage,
+)
+from services.auth_service import resolve_scope, subtree_ids
+from routes.auth import get_current_user
 
-router = APIRouter(prefix="/leads", tags=["Leads"])
+# Every leads endpoint requires a logged-in user.
+router = APIRouter(prefix="/leads", tags=["Leads"], dependencies=[Depends(get_current_user)])
+
+
+def _owner_names(db: Session) -> dict[int, str]:
+    """Map user_id → name for cheap owner lookups in responses."""
+    return {uid: name for uid, name in db.query(User.id, User.name).all()}
 
 
 @router.get("/stats")
-def pipeline_stats(db: Session = Depends(get_db)):
-    """Quick summary of the pipeline — useful for the CRM dashboard."""
-    total = db.query(func.count(Lead.id)).scalar()
+def pipeline_stats(
+    as_user: int | None = Query(None, alias="as"),
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Quick summary of the pipeline — scoped to what the current user may see."""
+    scope = resolve_scope(current, db, as_user)
+
+    def scoped(q):
+        return q.filter(Lead.owner_id.in_(scope)) if scope is not None else q
+
+    total = scoped(db.query(func.count(Lead.id))).scalar()
 
     quality_counts = (
-        db.query(Lead.lead_quality, func.count(Lead.id))
+        scoped(db.query(Lead.lead_quality, func.count(Lead.id)))
         .group_by(Lead.lead_quality)
         .all()
     )
     status_counts = (
-        db.query(Lead.status, func.count(Lead.id))
+        scoped(db.query(Lead.status, func.count(Lead.id)))
         .group_by(Lead.status)
         .all()
     )
 
     # Average response time (minutes) for contacted leads
-    contacted = db.query(Lead).filter(Lead.first_response_at.isnot(None)).all()
+    contacted = scoped(db.query(Lead).filter(Lead.first_response_at.isnot(None))).all()
     avg_response_min = None
     if contacted:
         deltas = [
@@ -64,16 +85,22 @@ def list_leads(
     status: str | None = Query(None, description="Filter by status"),
     limit: int = Query(50, le=200),
     offset: int = 0,
+    as_user: int | None = Query(None, alias="as"),
     db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
 ):
-    """List leads with optional filters. Sorted by score descending."""
+    """List leads (scoped to the current user), sorted by score descending."""
     query = db.query(Lead)
+    scope = resolve_scope(current, db, as_user)
+    if scope is not None:
+        query = query.filter(Lead.owner_id.in_(scope))
     if quality:
         query = query.filter(Lead.lead_quality == quality.lower())
     if status:
         query = query.filter(Lead.status == status.lower())
 
     leads = query.order_by(Lead.lead_score.desc()).offset(offset).limit(limit).all()
+    names = _owner_names(db)
 
     return [
         {
@@ -94,6 +121,9 @@ def list_leads(
             "demo_preference": l.demo_preference,
             "human_priority": l.human_priority,
             "meet_link": l.meet_link,
+            "stage": lead_stage(l),
+            "owner_id": l.owner_id,
+            "owner_name": names.get(l.owner_id),
             "created_at": l.created_at,
             "last_interaction_at": l.last_interaction_at,
         }
@@ -110,6 +140,41 @@ class StatusRequest(BaseModel):
 
 class MeetRequest(BaseModel):
     link: str
+
+class OwnerRequest(BaseModel):
+    owner_id: int
+
+
+@router.get("/assignable-owners")
+def assignable_owners(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    """Employees the current user can assign leads to (admin: all; manager: their team)."""
+    if current.role == "employee":
+        return []
+    scope = subtree_ids(current, db)  # None for admin
+    q = db.query(User).filter(User.role == "employee", User.is_active == True)  # noqa: E712
+    if scope is not None:
+        q = q.filter(User.id.in_(scope))
+    return [{"id": u.id, "name": u.name} for u in q.order_by(User.name).all()]
+
+
+@router.patch("/{lead_id}/owner")
+def reassign_owner(
+    lead_id: int, body: OwnerRequest,
+    db: Session = Depends(get_db), current: User = Depends(get_current_user),
+):
+    """Reassign a lead to an employee. Managers/admin only, within their scope."""
+    if current.role == "employee":
+        raise HTTPException(status_code=403, detail="Employees cannot reassign leads")
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    scope = subtree_ids(current, db)
+    target = db.query(User).filter(User.id == body.owner_id, User.role == "employee").first()
+    if not target or (scope is not None and target.id not in scope):
+        raise HTTPException(status_code=400, detail="Invalid owner")
+    lead.owner_id = target.id
+    db.commit()
+    return {"id": lead.id, "owner_id": lead.owner_id, "owner_name": target.name}
 
 
 @router.post("/{lead_id}/meet")
@@ -167,7 +232,10 @@ def override_status(lead_id: int, body: StatusRequest, db: Session = Depends(get
     that ARIA doesn't — e.g. "I spoke to this person, marking as contacted."
     """
     valid = {"new", "engaged", "interested", "needs_human", "contacted",
-             "demo_scheduled", "demo_done", "converted", "lost", "invalid"}
+             "demo_scheduled", "demo_done", "converted", "lost", "invalid",
+             # canonical pipeline stages (set from the lead detail view)
+             "follow_up", "post_demo", "negotiation", "post_commercial",
+             "parked", "won"}
     if body.status not in valid:
         return {"error": f"Invalid status. Valid options: {sorted(valid)}"}
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
@@ -184,28 +252,45 @@ def override_status(lead_id: int, body: StatusRequest, db: Session = Depends(get
 
 
 @router.get("/analytics")
-def get_analytics(db: Session = Depends(get_db)):
+def get_analytics(
+    as_user: int | None = Query(None, alias="as"),
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
-    Aggregated analytics for the dashboard Analytics view.
-    Returns funnel, source mix, score distribution, weekly trend, and cohorts.
+    Aggregated analytics for the dashboard Analytics view (scoped to the user).
+    Returns lead stages, funnel, source mix, score distribution, trend, cohorts.
     """
-    leads = db.query(Lead).all()
+    q = db.query(Lead)
+    scope = resolve_scope(current, db, as_user)
+    if scope is not None:
+        q = q.filter(Lead.owner_id.in_(scope))
+    leads = q.all()
     total = max(len(leads), 1)
 
-    # ── Pipeline funnel ────────────────────────────────────────────────────────
+    # ── Canonical lead stages (the 10-stage CRM pipeline) ──────────────────────
     from collections import Counter
-    status_counts = Counter(l.status or "new" for l in leads)
-
-    contacted_n = sum(status_counts.get(s, 0) for s in ["contacted", "engaged", "needs_human"])
-    demo_n      = sum(status_counts.get(s, 0) for s in ["demo_scheduled", "demo_done"])
-    converted_n = status_counts.get("converted", 0)
-
-    funnel = [
-        {"stage": "New leads",  "count": total,        "pct": 100},
-        {"stage": "Contacted",  "count": contacted_n,  "pct": round(contacted_n  / total * 100)},
-        {"stage": "Demo",       "count": demo_n,        "pct": round(demo_n       / total * 100)},
-        {"stage": "Converted",  "count": converted_n,   "pct": round(converted_n  / total * 100)},
+    stage_of = {l.id: lead_stage(l) for l in leads}
+    stage_counts = Counter(stage_of.values())
+    stages = [
+        {"key": k, "label": STAGE_LABELS[k], "count": stage_counts.get(k, 0)}
+        for k in STAGE_ORDER
     ]
+
+    # ── Pipeline funnel — cumulative over the linear track ──────────────────────
+    # Parked/Lost are off-track, so they're excluded from the funnel (shown in the
+    # stage grid instead). Each bar = leads currently at-or-beyond that stage.
+    track_idx = {k: i for i, k in enumerate(FUNNEL_TRACK)}
+    on_track = [s for s in stage_of.values() if s in track_idx]
+    on_track_total = max(len(on_track), 1)
+    funnel = []
+    for i, k in enumerate(FUNNEL_TRACK):
+        cnt = sum(1 for s in on_track if track_idx[s] >= i)
+        funnel.append({
+            "stage": STAGE_LABELS[k],
+            "count": cnt,
+            "pct": round(cnt / on_track_total * 100),
+        })
 
     # ── Source mix ─────────────────────────────────────────────────────────────
     src_counts = Counter(
@@ -271,6 +356,7 @@ def get_analytics(db: Session = Depends(get_db)):
         })
 
     return {
+        "stages":       stages,
         "funnel":       funnel,
         "sources":      sources,
         "score_buckets": score_buckets,
@@ -281,17 +367,28 @@ def get_analytics(db: Session = Depends(get_db)):
             "hot":       sum(1 for l in leads if l.lead_quality == "hot"),
             "warm":      sum(1 for l in leads if l.lead_quality == "warm"),
             "demos":     sum(1 for l in leads if l.willing_for_demo),
-            "converted": converted_n,
+            "converted": stage_counts.get("won", 0),
         },
     }
 
 
 @router.get("/{lead_id}")
-def get_lead(lead_id: int, db: Session = Depends(get_db)):
-    """Get a single lead with full interaction history."""
+def get_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Get a single lead with full interaction history (scope-checked)."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         return {"error": "Lead not found"}
+
+    # Visibility check — non-admins can only open leads inside their scope.
+    scope = subtree_ids(current, db)
+    if scope is not None and lead.owner_id not in scope:
+        raise HTTPException(status_code=403, detail="Not allowed to view this lead")
+
+    names = _owner_names(db)
 
     interactions = (
         db.query(Interaction)
@@ -323,6 +420,9 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
             "quality": lead.lead_quality,
             "score_breakdown": score_breakdown(lead),
             "status": lead.status,
+            "stage": lead_stage(lead),
+            "owner_id": lead.owner_id,
+            "owner_name": names.get(lead.owner_id),
             "current_intent": lead.current_intent,
             # ── Demo interest ─────────────────────────────────────────────────
             "willing_for_demo": lead.willing_for_demo,

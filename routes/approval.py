@@ -20,9 +20,13 @@ from sqlalchemy import or_
 from database import get_db
 from models.interaction import Interaction
 from models.lead import Lead
+from models.user import User
 from utils.email_sender import send_email
+from services.auth_service import resolve_scope
+from routes.auth import get_current_user
 
-router = APIRouter(prefix="/approval", tags=["Approval Queue"])
+router = APIRouter(prefix="/approval", tags=["Approval Queue"],
+                   dependencies=[Depends(get_current_user)])
 
 
 class EditRequest(BaseModel):
@@ -32,20 +36,21 @@ class EditRequest(BaseModel):
 
 # ── GET /approval/queue ───────────────────────────────────────────────────────
 @router.get("/queue")
-def get_approval_queue(db: Session = Depends(get_db)):
+def get_approval_queue(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
-    Returns all outbound drafts waiting for human approval.
-    This is what a team member checks before messages go out.
+    Outbound drafts waiting for approval, scoped to the current user's team.
     """
-    pending = (
-        db.query(Interaction)
-        .filter(
-            Interaction.direction == "outbound",
-            Interaction.send_status == "pending_approval",
-        )
-        .order_by(Interaction.timestamp.asc())
-        .all()
+    scope = resolve_scope(current, db, None)
+    q = db.query(Interaction).filter(
+        Interaction.direction == "outbound",
+        Interaction.send_status == "pending_approval",
     )
+    if scope is not None:
+        q = q.join(Lead, Lead.id == Interaction.lead_id).filter(Lead.owner_id.in_(scope))
+    pending = q.order_by(Interaction.timestamp.asc()).all()
 
     results = []
     for interaction in pending:
@@ -70,21 +75,34 @@ def get_approval_queue(db: Session = Depends(get_db)):
 
 # ── GET /approval/stats ───────────────────────────────────────────────────────
 @router.get("/stats")
-def approval_stats(db: Session = Depends(get_db)):
+def approval_stats(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
-    Real approval-queue metrics + recent review activity for the dashboard.
-    All figures are computed from the interactions table — nothing hardcoded.
+    Approval-queue metrics + recent review activity, scoped to the user's team.
     """
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
 
-    base = db.query(Interaction).filter(Interaction.direction == "outbound")
+    scope = resolve_scope(current, db, None)
+    scoped_lead_ids = None
+    if scope is not None:
+        scoped_lead_ids = [
+            lid for (lid,) in db.query(Lead.id).filter(Lead.owner_id.in_(scope)).all()
+        ]
 
-    pending = base.filter(Interaction.send_status == "pending_approval").count()
-    rejected = base.filter(Interaction.send_status == "rejected").count()
-    sent_total = base.filter(Interaction.send_status == "sent").count()
+    def base_q():
+        q = db.query(Interaction).filter(Interaction.direction == "outbound")
+        if scoped_lead_ids is not None:
+            q = q.filter(Interaction.lead_id.in_(scoped_lead_ids))
+        return q
+
+    pending = base_q().filter(Interaction.send_status == "pending_approval").count()
+    rejected = base_q().filter(Interaction.send_status == "rejected").count()
+    sent_total = base_q().filter(Interaction.send_status == "sent").count()
     approved_today = (
-        base.filter(
+        base_q().filter(
             Interaction.send_status == "sent",
             Interaction.handled_by.in_(["human_approved", "human_edited", "human"]),
             Interaction.timestamp >= today_start,
@@ -93,9 +111,8 @@ def approval_stats(db: Session = Depends(get_db)):
 
     # Recent review activity (last 10 sent/rejected outbound messages)
     recent = (
-        db.query(Interaction)
+        base_q()
         .filter(
-            Interaction.direction == "outbound",
             or_(Interaction.send_status == "sent", Interaction.send_status == "rejected"),
         )
         .order_by(Interaction.timestamp.desc())

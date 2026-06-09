@@ -23,6 +23,20 @@ class Settings(BaseSettings):
     human_approval_mode: bool = True   # Phase 2: drafts need human approval
     debug: bool = False
 
+    # Signs the session cookie. Override in .env / prod with a long random value.
+    session_secret: str = "aria-dev-session-secret-change-in-production"
+
+    # ── Auth provider ─────────────────────────────────────────────────────────
+    # "local"  → seeded email/password login (default; great for dev/demo)
+    # "auth0"  → Auth0 OIDC + RBAC (set the AUTH0_* vars below to activate)
+    auth_provider: str = "local"
+    auth0_domain: str = ""            # e.g. your-tenant.us.auth0.com
+    auth0_client_id: str = ""
+    auth0_client_secret: str = ""
+    auth0_audience: str = ""          # optional (API identifier)
+    # Namespaced custom claim that carries the user's roles in the Auth0 token.
+    auth0_roles_claim: str = "https://aria.beyondsure/roles"
+
     # Chat + alert config
     base_url: str = "http://localhost:8000"           # used to build chat links in emails
     alert_email: str = ""                             # team inbox for hot-lead alerts
