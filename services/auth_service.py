@@ -117,17 +117,47 @@ def next_owner_id(db: Session) -> int | None:
 
 # ── Seeding the demo org ──────────────────────────────────────────────────────
 
+# Role-named accounts — the internal role key for a team leader stays "manager".
 DEFAULT_USERS = [
-    # name,            email,                      role,        password,      reports_to (email or None)
-    ("Kunal",          "admin@beyondsure.in",      "admin",     "admin123",    None),
-    ("Mohammad Faizan", "manager@beyondsure.in",   "manager",   "manager123",  "admin@beyondsure.in"),
-    ("Rushal K",       "employee@beyondsure.in",   "employee",  "employee123", "manager@beyondsure.in"),
+    # name,          email,                     role,        password,      reports_to (email or None)
+    ("Admin",        "admin@beyondsure.in",     "admin",     "admin123",    None),
+    ("Team Leader",  "leader@beyondsure.in",    "manager",   "leader123",   "admin@beyondsure.in"),
+    ("Employee",     "employee@beyondsure.in",  "employee",  "employee123", "leader@beyondsure.in"),
 ]
+
+# Old seeded identities → role-named ones (one-time fix-up for existing dev DBs).
+_DEMO_UPGRADES = [
+    # match email,             match name,        new name,      new email,              new password
+    ("admin@beyondsure.in",    "Kunal",           "Admin",       None,                   None),
+    ("manager@beyondsure.in",  "Mohammad Faizan", "Team Leader", "leader@beyondsure.in", "leader123"),
+    ("employee@beyondsure.in", "Rushal K",        "Employee",    None,                   None),
+]
+
+
+def _upgrade_demo_users(db: Session) -> None:
+    """Rename previously-seeded demo users to role-based identities. Idempotent —
+    only touches rows that still carry the exact old seeded name + email."""
+    changed = False
+    for email, old_name, new_name, new_email, new_password in _DEMO_UPGRADES:
+        u = db.query(User).filter(User.email == email, User.name == old_name).first()
+        if not u:
+            continue
+        u.name = new_name
+        u.avatar_seed = new_name
+        if new_email:
+            u.email = new_email
+        if new_password:
+            u.password_hash = hash_password(new_password)
+        changed = True
+    if changed:
+        db.commit()
+        print("[Auth] Upgraded demo users to role-based identities (admin/leader/employee).")
 
 
 def seed_users(db: Session) -> None:
     """Create the 3-level demo org if no users exist. Idempotent."""
     if db.query(User).count() > 0:
+        _upgrade_demo_users(db)
         return
 
     by_email: dict[str, User] = {}
@@ -147,7 +177,7 @@ def seed_users(db: Session) -> None:
             by_email[email].manager_id = by_email[reports_to].id
 
     db.commit()
-    print("[Auth] Seeded 3 demo users (admin/manager/employee).")
+    print("[Auth] Seeded 3 demo users (admin/leader/employee).")
 
 
 def map_auth0_role(roles) -> str:

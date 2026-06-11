@@ -1666,6 +1666,7 @@ body {
 }
 .login-card input:focus { outline: none; border-color: var(--pri-300); background: #fff; }
 .login-card .primary-btn { margin-top: 6px; }
+.login-toggle { align-self: center; margin-top: 2px; }
 
 /* ── Lead stages grid (Analytics) ── */
 .stage-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
@@ -1727,3 +1728,86 @@ body {
 .qa-real .qa-sub { display: block; font-size: 12px; color: var(--ink-4); margin-top: 1px; }
 
 @media (max-width: 540px) { .form-row { grid-template-columns: 1fr; } }
+
+/* ━━━━━━━━━━━━━ EMAIL TEMPLATES: compose + manager ━━━━━━━━━━━━━ */
+.modal-wide { width: min(720px, 96vw); }
+
+.compose-body { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.compose-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.compose-field input, .compose-field select, .compose-field textarea {
+  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--ink-1);
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 9px 12px; outline: none; width: 100%;
+}
+.compose-field input:focus, .compose-field select:focus, .compose-field textarea:focus { border-color: var(--pri-300); background: var(--bg-elev); }
+.compose-field input[readonly] { color: var(--ink-3); cursor: default; }
+.compose-field textarea { resize: vertical; line-height: 1.55; min-height: 160px; }
+.compose-row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+
+.ghost-link { background: none; border: none; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--pri-500); padding: 6px 4px; border-radius: 6px; }
+.ghost-link:hover { text-decoration: underline; }
+.ghost-danger { color: #dc2626; }
+
+/* attachment chips */
+.compose-attach { display: flex; flex-wrap: wrap; gap: 8px; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--pri-50); color: #4c1d95;
+  border: 1px solid #ddd6fe; border-radius: 100px;
+  font-size: 12px; font-weight: 600; padding: 5px 12px; text-decoration: none;
+}
+a.attach-chip:hover { background: #ede9fe; }
+.attach-missing { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.attach-none { font-size: 12px; color: var(--ink-4); }
+.attach-x { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; color: inherit; padding: 0 0 0 2px; opacity: .65; }
+.attach-x:hover { opacity: 1; }
+
+/* template manager */
+.tplmgr-body { display: grid; grid-template-columns: 220px 1fr; gap: 18px; margin-top: 14px; }
+.tplmgr-list { display: flex; flex-direction: column; gap: 6px; align-content: start; }
+.tplmgr-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  background: var(--bg-soft); border: 1px solid transparent; border-radius: var(--r-md);
+  padding: 10px 12px; cursor: pointer; font: inherit; text-align: left; width: 100%;
+}
+.tplmgr-item:hover { background: var(--pri-50); }
+.tplmgr-item.active { background: var(--pri-50); border-color: var(--pri-300); }
+.tplmgr-item-name { font-size: 13px; font-weight: 700; color: var(--ink-1); }
+.tplmgr-new { color: var(--pri-500); font-weight: 700; font-size: 13px; flex-direction: row; }
+.tplmgr-edit { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+.stage-chip--xs { font-size: 10.5px; padding: 2px 8px; border-radius: 100px; font-weight: 700; }
+
+.tpl-tokens { font-size: 11.5px; color: var(--ink-4); line-height: 2; }
+.tpl-tokens .tok { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 11px; cursor: help; }
+.tpl-upload { display: inline-block; font-size: 12.5px; font-weight: 700; color: var(--pri-500); cursor: pointer; padding: 4px 0; }
+.tpl-upload:hover { text-decoration: underline; }
+
+.ld-compose-btn { width: 100%; }
+.ld-compose-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 640px) { .tplmgr-body { grid-template-columns: 1fr; } }
+
+/* ━━━━━━━━━━━━━ TEAM & ROLES (admin) ━━━━━━━━━━━━━ */
+.team-row {
+  display: grid; grid-template-columns: 36px 1fr 130px 200px;
+  gap: 12px; align-items: center; padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.team-row:last-of-type { border-bottom: none; }
+.team-head {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--ink-4); padding-bottom: 4px;
+}
+.team-av { width: 32px; height: 32px; border-radius: 50%; background: var(--bg-soft); }
+.team-info { display: flex; flex-direction: column; min-width: 0; }
+.team-name { font-size: 13.5px; font-weight: 700; color: var(--ink-1); }
+.team-name small { font-weight: 500; color: var(--ink-4); }
+.team-mail { font-size: 12px; color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-role[disabled], .team-boss[disabled] { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .team-row { grid-template-columns: 36px 1fr; }
+  .team-row select { grid-column: 2; }
+  .team-head { display: none; }
+}

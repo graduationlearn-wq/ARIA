@@ -33,9 +33,10 @@ function avatarUrl(name) {
 let CURRENT_USER = null;          // logged-in user {id,name,email,role,...}
 let VIEWABLE = [];                // users this user can drill into
 let VIEW_AS = null;               // user_id being viewed, or null = own scope
+let VIEW_MGR = null;              // admin only: manager picked in the first dropdown
 let ASSIGNABLE_OWNERS = [];       // employees this user can reassign leads to
 
-const roleLabel = r => r === 'admin' ? 'Admin' : r === 'manager' ? 'Manager' : 'Employee';
+const roleLabel = r => r === 'admin' ? 'Admin' : r === 'manager' ? 'Team Leader' : 'Employee';
 const asParam = () => VIEW_AS ? `?as=${VIEW_AS}` : '';
 
 async function checkAuth() {
@@ -74,24 +75,83 @@ function renderIdentity() {
   if ($('avatar-menu-img'))   $('avatar-menu-img').src = av;
   if ($('avatar-menu-name'))  $('avatar-menu-name').textContent = CURRENT_USER.name;
   if ($('avatar-menu-role'))  $('avatar-menu-role').textContent = `${roleLabel(CURRENT_USER.role)} · ${CURRENT_USER.email}`;
+  if ($('menu-team'))         $('menu-team').hidden = CURRENT_USER.role !== 'admin';
   renderViewAs();
 }
 
+async function reloadScoped() { await loadLiveData(); renderAll(); }
+
+/**
+ * Scope selector, driven by the live org tree:
+ *  - admin    → [team dropdown: every manager] → [employee dropdown: that manager's people]
+ *  - manager  → [employee dropdown: their own reports]
+ *  - employee → nothing (they only ever see their own leads)
+ */
 function renderViewAs() {
   const host = $('viewas');
   if (!host) return;
   if (!CURRENT_USER || CURRENT_USER.role === 'employee') { host.innerHTML = ''; return; }
-  const allLabel = CURRENT_USER.role === 'admin' ? 'Everyone' : 'My team';
-  const opts = [`<option value="">${allLabel}</option>`].concat(
-    VIEWABLE.filter(u => u.id !== CURRENT_USER.id).map(u =>
-      `<option value="${u.id}" ${String(VIEW_AS) === String(u.id) ? 'selected' : ''}>${esc(u.name)} · ${roleLabel(u.role)}</option>`)
-  );
-  host.innerHTML = `<select id="viewas-select" class="viewas-select" title="Whose pipeline to view">${opts.join('')}</select>`;
-  $('viewas-select').addEventListener('change', async e => {
-    VIEW_AS = e.target.value || null;
-    await loadLiveData();
-    renderAll();
+
+  const empOption = u => `<option value="${u.id}" ${String(VIEW_AS) === String(u.id) ? 'selected' : ''}>${esc(u.name)}</option>`;
+
+  // ── Manager: one dropdown — their own team ──
+  if (CURRENT_USER.role === 'manager') {
+    const team = VIEWABLE.filter(u => u.id !== CURRENT_USER.id);
+    host.innerHTML = `
+      <select id="viewas-emp" class="viewas-select" title="Whose leads to view">
+        <option value="">My team · all</option>
+        ${team.map(empOption).join('')}
+      </select>`;
+    $('viewas-emp').addEventListener('change', async e => {
+      VIEW_AS = e.target.value || null;
+      await reloadScoped();
+    });
+    return;
+  }
+
+  // ── Admin: two dropdowns, always — team leader + employee ──
+  // No leader picked → employee list shows everyone (jump straight to a person);
+  // leader picked → employee list narrows to that leader's team.
+  const leaders = VIEWABLE.filter(u => u.role === 'manager');
+  const employees = VIEWABLE.filter(u => u.role === 'employee');
+  const pool = VIEW_MGR
+    ? employees.filter(u => String(u.manager_id) === String(VIEW_MGR))
+    : employees;
+
+  host.innerHTML = `
+    <select id="viewas-mgr" class="viewas-select" title="Team leader — filters the employee list">
+      <option value="">Team Leader · all</option>
+      ${leaders.map(m => `<option value="${m.id}" ${String(VIEW_MGR) === String(m.id) ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
+    </select>
+    <select id="viewas-emp" class="viewas-select" title="Employee — view one person's leads">
+      <option value="">Employee · all</option>
+      ${pool.map(empOption).join('')}
+    </select>`;
+
+  $('viewas-mgr').addEventListener('change', async e => {
+    VIEW_MGR = e.target.value || null;
+    VIEW_AS = VIEW_MGR || null;       // leader picked = their whole team
+    renderViewAs();                   // refresh the employee list for that team
+    await reloadScoped();
   });
+  $('viewas-emp').addEventListener('change', async e => {
+    VIEW_AS = e.target.value || VIEW_MGR || null;
+    await reloadScoped();
+  });
+}
+
+/** Re-fetch identity after org changes, drop stale selections, reload data. */
+async function refreshIdentity() {
+  await checkAuth();
+  if (VIEW_MGR && !VIEWABLE.some(u => String(u.id) === String(VIEW_MGR) && u.role === 'manager')) {
+    VIEW_MGR = null; VIEW_AS = null;
+  }
+  if (VIEW_AS && !VIEWABLE.some(u => String(u.id) === String(VIEW_AS))) {
+    VIEW_AS = null;
+  }
+  renderIdentity();
+  await loadAssignableOwners();
+  await reloadScoped();
 }
 
 function showLogin(msg) {
@@ -117,20 +177,53 @@ function applyLoginMode(provider) {
   }
 }
 
+async function doRegister(name, email, password) {
+  const r = await fetch('/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password }),
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.detail || 'Could not create the account');
+  }
+  const d = await r.json();
+  CURRENT_USER = d.user; VIEWABLE = d.viewable || [];
+}
+
+let isRegisterMode = false;
+
+function setLoginMode(register) {
+  isRegisterMode = register;
+  if ($('login-name-wrap')) $('login-name-wrap').hidden = !register;
+  if ($('login-submit'))    $('login-submit').textContent = register ? 'Create account' : 'Sign in';
+  if ($('login-toggle'))    $('login-toggle').textContent = register
+    ? 'Already have an account? Sign in'
+    : 'New here? Create an account';
+  if ($('login-sub'))       $('login-sub').textContent = register
+    ? 'You’ll join as an Employee — the admin assigns your team after.'
+    : 'Use your team account to access the pipeline.';
+  const e = $('login-error'); if (e) e.hidden = true;
+}
+
 function wireLogin() {
   const f = $('login-form'); if (!f) return;
+  $('login-toggle')?.addEventListener('click', () => setLoginMode(!isRegisterMode));
   f.addEventListener('submit', async ev => {
     ev.preventDefault();
     const email = ($('login-email').value || '').trim();
     const password = $('login-password').value || '';
     const btn = $('login-submit'); const orig = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Signing in…';
+    btn.disabled = true; btn.textContent = isRegisterMode ? 'Creating…' : 'Signing in…';
     try {
-      await doLogin(email, password);
+      if (isRegisterMode) {
+        await doRegister(($('login-name').value || '').trim(), email, password);
+      } else {
+        await doLogin(email, password);
+      }
       hideLogin();
       await bootDashboard();
     } catch (err) {
-      showLogin(err.message || 'Invalid email or password');
+      showLogin(err.message || (isRegisterMode ? 'Could not create the account' : 'Invalid email or password'));
     } finally { btn.disabled = false; btn.textContent = orig; }
   });
 }
@@ -142,7 +235,7 @@ async function bootDashboard() {
   const fe = CONVERSATIONS.findIndex(c => c.escalated);
   if (fe >= 0) activeConv = fe;
   renderAll();
-  await Promise.all([loadLiveData(), loadConfig()]);
+  await Promise.all([loadLiveData(), loadConfig(), loadTemplates()]);
   const le = CONVERSATIONS.findIndex(c => c.escalated);
   activeConv = le >= 0 ? le : 0;
   renderAll();
@@ -1023,6 +1116,8 @@ function renderLeadDetail(data) {
       ${row('Phone', esc(l.phone || '—'))}
     </div>
 
+    ${templateSectionHtml(l)}
+
     <div class="ld-section">
       <div class="ld-section-title">Profile</div>
       ${row('Team size', l.team_size ?? '—')}
@@ -1051,6 +1146,24 @@ function renderLeadDetail(data) {
 
   const osel = $('ld-owner');
   if (osel) osel.addEventListener('change', () => reassignOwner(l.id, +osel.value));
+
+  const cbtn = $('ld-compose');
+  if (cbtn) cbtn.addEventListener('click', () => openCompose(l));
+}
+
+/** "Email the lead" section for the detail modal — one click to a filled draft. */
+function templateSectionHtml(l) {
+  if (!TEMPLATES.length) return '';
+  const suggested = TEMPLATES.find(t => t.stage === l.stage);
+  const hint = suggested
+    ? `Suggested for this stage: <b>${esc(suggested.name)}</b> — name &amp; company fill in automatically.`
+    : 'Name &amp; company fill in automatically from the lead record.';
+  return `
+    <div class="ld-section">
+      <div class="ld-section-title">Email the lead</div>
+      <button type="button" class="primary-btn ld-compose-btn" id="ld-compose" ${!l.email ? 'disabled title="This lead has no email address"' : ''}>✉ Compose from template</button>
+      <div class="ld-score-note">${hint}</div>
+    </div>`;
 }
 
 async function reassignOwner(id, ownerId) {
@@ -2011,6 +2124,7 @@ function wireTopbar() {
       closeAllPopovers();
       if (a === 'settings') openSettings('knowledge');
       else if (a === 'kb')  window.open('/admin/kb', '_blank');
+      else if (a === 'team') openTeamMgr();
       else if (a === 'docs') openSettings('docs');
       else if (a === 'signout') { fetch('/auth/logout', { method: 'POST' }).finally(() => location.reload()); }
     });
@@ -2286,6 +2400,333 @@ function wireLeadsView() {
   $('priority-see-all')?.addEventListener('click', e => { e.preventDefault(); switchView('approvals'); });
 }
 
+/* ══════════════════════ EMAIL TEMPLATES ══════════════════════ */
+let TEMPLATES = [];
+let PLACEHOLDER_HELP = null;   // { token: description } — lazy-loaded for the editor
+let composeLead = null;        // lead the compose modal is addressing
+let tplmgrSelId = null;        // template being edited in the manager
+
+async function loadTemplates() {
+  try {
+    const r = await fetch('/templates/');
+    if (!r.ok) return;
+    TEMPLATES = (await r.json()).templates || [];
+  } catch (_) { /* offline / sample mode — template UI simply hides */ }
+}
+
+/* ── Compose ── */
+function tplOptionsHtml(stage, selectedId) {
+  const sug = TEMPLATES.filter(t => t.stage === stage);
+  const gen = TEMPLATES.filter(t => !t.stage);
+  const rest = TEMPLATES.filter(t => t.stage && t.stage !== stage);
+  const opt = t => `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${esc(t.name)}</option>`;
+  let html = '';
+  if (sug.length)  html += `<optgroup label="Suggested · ${esc(STAGE_LBL[stage] || stage)}">${sug.map(opt).join('')}</optgroup>`;
+  if (gen.length)  html += `<optgroup label="General">${gen.map(opt).join('')}</optgroup>`;
+  if (rest.length) html += `<optgroup label="Other stages">${rest.map(opt).join('')}</optgroup>`;
+  return html;
+}
+
+async function openCompose(l) {
+  if (!TEMPLATES.length) await loadTemplates();
+  if (!TEMPLATES.length) { toast('No templates yet — add one first', true); return; }
+
+  composeLead = { id: l.id, name: l.name || 'Lead', email: l.email || '', stage: l.stage };
+  const suggested = TEMPLATES.find(t => t.stage === l.stage) || TEMPLATES[0];
+
+  $('compose-title').textContent = `Email · ${composeLead.name}`;
+  $('compose-to').value = composeLead.email;
+  $('compose-tpl').innerHTML = tplOptionsHtml(l.stage, suggested.id);
+  $('compose-error').hidden = true;
+  $('compose-overlay').hidden = false;
+  await loadComposePreview(suggested.id);
+}
+
+function closeCompose() { const o = $('compose-overlay'); if (o) o.hidden = true; composeLead = null; }
+
+async function loadComposePreview(tplId) {
+  if (!composeLead) return;
+  const err = $('compose-error');
+  err.hidden = true;
+  try {
+    const r = await fetch(`/templates/${tplId}/preview?lead_id=${composeLead.id}`);
+    if (!r.ok) throw new Error((await r.json()).detail || 'Preview failed');
+    const d = await r.json();
+    $('compose-subject').value = d.subject;
+    $('compose-text').value = d.body;
+    renderComposeAttachments(tplId, d.attachments || []);
+    if (d.unknown_tokens && d.unknown_tokens.length) {
+      err.textContent = `Heads up — unknown placeholder(s) left in the text: ${d.unknown_tokens.map(t => `{${t}}`).join(', ')}`;
+      err.hidden = false;
+    }
+  } catch (ex) {
+    err.textContent = ex.message || 'Could not load the preview.';
+    err.hidden = false;
+  }
+}
+
+function renderComposeAttachments(tplId, files) {
+  $('compose-attach').innerHTML = files.length
+    ? files.map(a => `
+        <a class="attach-chip ${a.exists ? '' : 'attach-missing'}"
+           href="/templates/${tplId}/attachments/${encodeURIComponent(a.file)}" target="_blank" rel="noopener"
+           title="${a.exists ? 'Click to view' : 'File missing on server — upload it in Manage templates'}">
+          📎 ${esc(a.display)}${a.exists ? '' : ' (missing)'}
+        </a>`).join('')
+    : `<span class="attach-none">No attachments on this template.</span>`;
+}
+
+async function sendCompose() {
+  if (!composeLead) return;
+  const tplId = +$('compose-tpl').value;
+  const btn = $('compose-send');
+  const err = $('compose-error');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Sending…';
+  err.hidden = true;
+  try {
+    const r = await fetch(`/templates/${tplId}/send`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lead_id: composeLead.id,
+        subject: $('compose-subject').value,
+        body: $('compose-text').value,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Send failed');
+    if (d.status !== 'sent') throw new Error(d.detail || 'SMTP not configured — the email was logged but not sent.');
+    toast(`Email sent to ${d.to}`);
+    closeCompose();
+    closeLeadDetail();
+    await loadLiveData();
+    renderAll();
+  } catch (ex) {
+    err.textContent = ex.message || 'Something went wrong.';
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+/* ── Template manager ── */
+async function openTplMgr() {
+  if (!PLACEHOLDER_HELP) {
+    try { PLACEHOLDER_HELP = (await (await fetch('/templates/placeholders')).json()).placeholders; }
+    catch (_) { PLACEHOLDER_HELP = {}; }
+  }
+  await loadTemplates();
+  tplmgrSelId = TEMPLATES.length ? TEMPLATES[0].id : null;
+  renderTplMgr();
+  $('tplmgr-overlay').hidden = false;
+}
+
+function closeTplMgr() { const o = $('tplmgr-overlay'); if (o) o.hidden = true; }
+
+function renderTplMgr() {
+  const list = $('tplmgr-list');
+  list.innerHTML = TEMPLATES.map(t => `
+    <button type="button" class="tplmgr-item ${t.id === tplmgrSelId ? 'active' : ''}" data-tid="${t.id}">
+      <span class="tplmgr-item-name">${esc(t.name)}</span>
+      ${t.stage
+        ? `<span class="stage-chip stage-chip--xs" style="background:${STAGE_TINT[t.stage] || '#f1f5f9'};color:${STAGE_FG[t.stage] || '#475569'}">${esc(t.stage_label || t.stage)}</span>`
+        : `<span class="stage-chip stage-chip--xs" style="background:#f1f5f9;color:#475569">Any stage</span>`}
+    </button>`).join('') +
+    `<button type="button" class="tplmgr-item tplmgr-new" data-tid="new">＋ New template</button>`;
+
+  $$('#tplmgr-list .tplmgr-item').forEach(el => el.addEventListener('click', () => {
+    tplmgrSelId = el.dataset.tid === 'new' ? null : +el.dataset.tid;
+    renderTplMgr();
+  }));
+
+  renderTplEditor();
+}
+
+function renderTplEditor() {
+  const host = $('tplmgr-edit');
+  const t = TEMPLATES.find(x => x.id === tplmgrSelId) || { name: '', stage: null, subject: '', body: '', attachments: [] };
+  const isNew = !t.id;
+
+  const tokens = Object.entries(PLACEHOLDER_HELP || {})
+    .map(([k, d]) => `<code class="tok" title="${esc(d)}">{${k}}</code>`).join(' ');
+
+  host.innerHTML = `
+    <label class="compose-field">Name<input type="text" id="tpl-name" value="${esc(t.name)}" placeholder="e.g. Proposal + Company Profile"></label>
+    <label class="compose-field">Stage
+      <select id="tpl-stage">
+        <option value="">Any stage</option>
+        ${STAGES.map(([k, lbl]) => `<option value="${k}" ${t.stage === k ? 'selected' : ''}>${lbl}</option>`).join('')}
+      </select>
+    </label>
+    <label class="compose-field">Subject<input type="text" id="tpl-subject" value="${esc(t.subject)}"></label>
+    <label class="compose-field">Body<textarea id="tpl-body" rows="10" spellcheck="false">${esc(t.body)}</textarea></label>
+    <div class="tpl-tokens">You can use: ${tokens}</div>
+    ${isNew ? '' : `
+      <div class="ld-section-title" style="margin-top:10px">Attachments</div>
+      <div class="compose-attach" id="tpl-attach">
+        ${(t.attachments || []).map(a => `
+          <span class="attach-chip ${a.exists ? '' : 'attach-missing'}">📎 ${esc(a.display)}${a.exists ? '' : ' (missing)'}
+            <button type="button" class="attach-x" data-file="${esc(a.file)}" title="Remove">×</button>
+          </span>`).join('') || '<span class="attach-none">None yet.</span>'}
+      </div>
+      <label class="tpl-upload">＋ Attach a file (PDF, DOCX, PPTX…)<input type="file" id="tpl-file" hidden></label>`}
+    <div class="modal-error" id="tpl-error" hidden></div>
+    <div class="compose-foot">
+      ${isNew ? '<span></span>' : `<button type="button" class="ghost-link ghost-danger" id="tpl-delete">Delete template</button>`}
+      <button type="button" class="primary-btn" id="tpl-save">${isNew ? 'Create template' : 'Save changes'}</button>
+    </div>`;
+
+  $('tpl-save').addEventListener('click', saveTpl);
+  $('tpl-delete')?.addEventListener('click', deleteTpl);
+  $('tpl-file')?.addEventListener('change', uploadTplFile);
+  $$('#tpl-attach .attach-x').forEach(b => b.addEventListener('click', () => removeTplFile(b.dataset.file)));
+}
+
+function _tplErr(msg) { const e = $('tpl-error'); e.textContent = msg; e.hidden = false; }
+
+async function saveTpl() {
+  const payload = {
+    name: $('tpl-name').value.trim(),
+    stage: $('tpl-stage').value || null,
+    subject: $('tpl-subject').value.trim(),
+    body: $('tpl-body').value,
+  };
+  if (!payload.name || !payload.subject || !payload.body.trim()) { _tplErr('Name, subject and body are required.'); return; }
+  try {
+    const isNew = !tplmgrSelId;
+    const r = await fetch(isNew ? '/templates/' : `/templates/${tplmgrSelId}`, {
+      method: isNew ? 'POST' : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Save failed');
+    await loadTemplates();
+    tplmgrSelId = d.id;
+    renderTplMgr();
+    toast(`Template "${d.name}" saved`);
+  } catch (ex) { _tplErr(ex.message || 'Could not save.'); }
+}
+
+async function deleteTpl() {
+  const t = TEMPLATES.find(x => x.id === tplmgrSelId);
+  if (!t || !confirm(`Delete the template "${t.name}"?`)) return;
+  try {
+    const r = await fetch(`/templates/${t.id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error();
+    await loadTemplates();
+    tplmgrSelId = TEMPLATES.length ? TEMPLATES[0].id : null;
+    renderTplMgr();
+    toast(`Template "${t.name}" deleted`);
+  } catch { _tplErr('Could not delete this template.'); }
+}
+
+async function uploadTplFile(e) {
+  const file = e.target.files[0];
+  if (!file || !tplmgrSelId) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const r = await fetch(`/templates/${tplmgrSelId}/attachments`, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Upload failed');
+    await loadTemplates();
+    renderTplMgr();
+    toast(`Attached ${file.name}`);
+  } catch (ex) { _tplErr(ex.message || 'Upload failed.'); }
+}
+
+async function removeTplFile(name) {
+  try {
+    const r = await fetch(`/templates/${tplmgrSelId}/attachments/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error();
+    await loadTemplates();
+    renderTplMgr();
+  } catch { _tplErr('Could not remove this attachment.'); }
+}
+
+/* ══════════════════════ TEAM & ROLES (admin) ══════════════════════ */
+function openTeamMgr() { renderTeamMgr(); $('teammgr-overlay').hidden = false; }
+function closeTeamMgr() { const o = $('teammgr-overlay'); if (o) o.hidden = true; }
+
+function renderTeamMgr() {
+  const host = $('teammgr-body');
+  if (!host) return;
+  const order = { admin: 0, manager: 1, employee: 2 };
+  const users = [...VIEWABLE].sort((a, b) =>
+    (order[a.role] - order[b.role]) || a.name.localeCompare(b.name));
+  const bosses = VIEWABLE.filter(u => u.role !== 'employee');
+
+  host.innerHTML = `
+    <div class="team-row team-head"><span></span><span>Member</span><span>Role</span><span>Reports to</span></div>` +
+    users.map(u => {
+      const isSelf = u.id === CURRENT_USER.id;
+      return `
+      <div class="team-row">
+        <img class="team-av" src="${avatarUrl(u.avatar_seed || u.name)}" alt="">
+        <div class="team-info">
+          <span class="team-name">${esc(u.name)}${isSelf ? ' <small>(you)</small>' : ''}</span>
+          <span class="team-mail">${esc(u.email)}</span>
+        </div>
+        <select class="ld-stage-select team-role" data-uid="${u.id}"
+                ${isSelf ? 'disabled title="You can’t change your own role"' : ''}>
+          ${['employee', 'manager', 'admin'].map(r =>
+            `<option value="${r}" ${u.role === r ? 'selected' : ''}>${roleLabel(r)}</option>`).join('')}
+        </select>
+        <select class="ld-stage-select team-boss" data-uid="${u.id}"
+                ${u.role === 'admin' ? 'disabled title="Admins sit at the top of the tree"' : ''}>
+          <option value="">— None —</option>
+          ${bosses.filter(b => b.id !== u.id).map(b =>
+            `<option value="${b.id}" ${u.manager_id === b.id ? 'selected' : ''}>${esc(b.name)} · ${roleLabel(b.role)}</option>`).join('')}
+        </select>
+      </div>`;
+    }).join('') +
+    `<div class="ld-score-note" style="margin-top:10px">
+       Changing a role or team instantly changes whose leads that person can see.
+       A team leader with team members must hand them over before being moved down.
+       New sign-ups land here as Employees with no team — assign them a team leader.
+     </div>`;
+
+  $$('#teammgr-body .team-role').forEach(s => s.addEventListener('change', () =>
+    patchTeamUser(+s.dataset.uid, { role: s.value })));
+  $$('#teammgr-body .team-boss').forEach(s => s.addEventListener('change', () =>
+    patchTeamUser(+s.dataset.uid, { manager_id: s.value ? +s.value : null })));
+}
+
+async function patchTeamUser(uid, payload) {
+  try {
+    const r = await fetch(`/auth/users/${uid}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Update failed');
+    toast(`${d.name} updated`);
+    await refreshIdentity();
+  } catch (ex) {
+    toast(ex.message || 'Could not update', true);
+  }
+  renderTeamMgr();   // re-render from fresh (or unchanged) VIEWABLE
+}
+
+function wireTeamMgr() {
+  $('teammgr-close')?.addEventListener('click', closeTeamMgr);
+  $('teammgr-overlay')?.addEventListener('click', e => { if (e.target.id === 'teammgr-overlay') closeTeamMgr(); });
+}
+
+function wireTemplates() {
+  $('compose-close')?.addEventListener('click', closeCompose);
+  $('compose-overlay')?.addEventListener('click', e => { if (e.target.id === 'compose-overlay') closeCompose(); });
+  $('compose-send')?.addEventListener('click', sendCompose);
+  $('compose-manage')?.addEventListener('click', () => { closeCompose(); openTplMgr(); });
+  $('compose-tpl')?.addEventListener('change', e => loadComposePreview(+e.target.value));
+
+  $('tplmgr-close')?.addEventListener('click', closeTplMgr);
+  $('tplmgr-overlay')?.addEventListener('click', e => { if (e.target.id === 'tplmgr-overlay') closeTplMgr(); });
+}
+
 /* ══════════════════════ RE-RENDER ALL ══════════════════════ */
 function renderAll() {
   renderKPIs();
@@ -2324,6 +2765,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireApprovals();
   wireOverviewChart();
   wireConvFilters();
+  wireTemplates();
+  wireTeamMgr();
   wireLogin();
 
   const isServed = window.location.protocol !== 'file:';

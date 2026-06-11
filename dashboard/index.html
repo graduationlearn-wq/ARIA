@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -102,6 +102,7 @@
             </div>
           </div>
           <button class="menu-item" data-action="settings">⚙ Settings</button>
+          <button class="menu-item" data-action="team" id="menu-team" hidden>👥 Team &amp; roles</button>
           <button class="menu-item" data-action="kb">📚 Knowledge Base</button>
           <button class="menu-item" data-action="docs">📄 Docs &amp; help</button>
           <div class="menu-divider"></div>
@@ -191,6 +192,64 @@
     </div>
   </div>
 
+  <!-- ━━━━━━━━━━━━━ COMPOSE TEMPLATED EMAIL MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="compose-overlay" hidden>
+    <div class="modal modal-wide" id="compose-modal">
+      <div class="modal-head">
+        <h2 id="compose-title">Compose email</h2>
+        <button class="modal-close" id="compose-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="compose-body">
+        <label class="compose-field">Template
+          <select id="compose-tpl"></select>
+        </label>
+        <div class="compose-row">
+          <label class="compose-field">To<input type="text" id="compose-to" readonly></label>
+        </div>
+        <label class="compose-field">Subject<input type="text" id="compose-subject"></label>
+        <label class="compose-field">Message<textarea id="compose-text" rows="12" spellcheck="false"></textarea></label>
+        <div class="compose-attach" id="compose-attach"></div>
+        <div class="modal-error" id="compose-error" hidden></div>
+        <div class="compose-foot">
+          <button type="button" class="ghost-link" id="compose-manage">Manage templates</button>
+          <button type="button" class="primary-btn" id="compose-send">Send email</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━ TEAM & ROLES MODAL (admin) ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="teammgr-overlay" hidden>
+    <div class="modal modal-wide" id="teammgr-modal">
+      <div class="modal-head">
+        <h2>Team &amp; roles</h2>
+        <button class="modal-close" id="teammgr-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-sub">The reporting tree decides who sees whose leads. Employees see their own, team leaders see their team, admins see everything.</p>
+      <div id="teammgr-body"></div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━ TEMPLATE MANAGER MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="tplmgr-overlay" hidden>
+    <div class="modal modal-wide" id="tplmgr-modal">
+      <div class="modal-head">
+        <h2>Email templates</h2>
+        <button class="modal-close" id="tplmgr-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="tplmgr-body">
+        <div class="tplmgr-list" id="tplmgr-list"></div>
+        <div class="tplmgr-edit" id="tplmgr-edit"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- toast -->
   <div class="toast" id="toast" hidden></div>
 
@@ -201,10 +260,12 @@
       <h2>Sign in</h2>
       <p class="login-sub" id="login-sub">Use your team account to access the pipeline.</p>
       <div id="login-local">
+        <label id="login-name-wrap" hidden>Name<input type="text" id="login-name" autocomplete="name" placeholder="Your full name"></label>
         <label>Email<input type="email" id="login-email" autocomplete="username" placeholder="role@beyondsure.in"></label>
         <label>Password<input type="password" id="login-password" autocomplete="current-password" placeholder="••••••••"></label>
         <div class="modal-error" id="login-error" hidden></div>
         <button type="submit" class="primary-btn" id="login-submit">Sign in</button>
+        <button type="button" class="ghost-link login-toggle" id="login-toggle">New here? Create an account</button>
       </div>
       <button type="button" class="primary-btn" id="login-auth0" hidden>Continue with Auth0 →</button>
     </form>
@@ -695,7 +756,7 @@
   </main>
 </div>
 
-<script src="data.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="data.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

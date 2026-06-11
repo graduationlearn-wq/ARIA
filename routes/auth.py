@@ -15,7 +15,7 @@ from config import settings
 from database import get_db
 from models.user import User
 from services.auth_service import (
-    verify_password, viewable_users, public_user, resolve_scope,
+    hash_password, verify_password, viewable_users, public_user, resolve_scope,
     map_auth0_role, upsert_oauth_user,
 )
 
@@ -62,6 +62,21 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class UserUpdate(BaseModel):
+    role: str | None = None
+    manager_id: int | None = None
+
+
+VALID_ROLES = {"employee", "manager", "admin"}
+MIN_PASSWORD_LENGTH = 6
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/config")
@@ -78,6 +93,36 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email.lower().strip()).first()
     if not user or not user.is_active or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    request.session["user_id"] = user.id
+    return {"user": public_user(user), "viewable": [public_user(u) for u in viewable_users(user, db)]}
+
+
+@router.post("/register")
+def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
+    """
+    Self-service signup (local auth only). New people join as Employee with no
+    team yet — the admin assigns their role and team leader in Team & roles.
+    """
+    if settings.auth_provider == "auth0":
+        raise HTTPException(status_code=400, detail="Accounts are managed in Auth0 — ask your admin for an invite")
+
+    name = body.name.strip()
+    email = body.email.lower().strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+    if len(body.password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="That email is already registered — sign in instead")
+
+    user = User(name=name, email=email, role="employee",
+                password_hash=hash_password(body.password), avatar_seed=name)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
     request.session["user_id"] = user.id
     return {"user": public_user(user), "viewable": [public_user(u) for u in viewable_users(user, db)]}
 
@@ -133,3 +178,73 @@ def me(current: User = Depends(get_current_user), db: Session = Depends(get_db))
         "user": public_user(current),
         "viewable": [public_user(u) for u in viewable_users(current, db)],
     }
+
+
+# ── Team management (admin only) ──────────────────────────────────────────────
+
+@router.patch("/users/{user_id}")
+def update_user(
+    user_id: int,
+    body: UserUpdate,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Change a team member's role or who they report to. Admin only.
+    The org tree drives what everyone sees, so this is guarded carefully:
+    no self-demotion, no orphaning a manager's team, no reporting loops.
+    """
+    if current.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can change roles")
+
+    target = db.query(User).filter(User.id == user_id, User.is_active == True).first()  # noqa: E712
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    fields = body.model_fields_set
+
+    if "role" in fields and body.role and body.role != target.role:
+        if body.role not in VALID_ROLES:
+            raise HTTPException(status_code=400, detail=f"Unknown role '{body.role}'")
+        if target.id == current.id:
+            raise HTTPException(status_code=400, detail="You can't change your own role")
+        # Demoting to employee would orphan their team; moving up (admin) is fine.
+        if target.role == "manager" and body.role == "employee":
+            reports = db.query(User).filter(
+                User.manager_id == target.id, User.is_active == True  # noqa: E712
+            ).count()
+            if reports:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{target.name} still has {reports} team member(s) — move them to another team leader first",
+                )
+        target.role = body.role
+        if body.role == "admin":
+            target.manager_id = None  # admins sit at the top of the tree
+
+    if "manager_id" in fields and target.role != "admin":
+        mid = body.manager_id
+        if mid is None:
+            target.manager_id = None
+        else:
+            if mid == target.id:
+                raise HTTPException(status_code=400, detail="Someone can't report to themselves")
+            boss = db.query(User).filter(User.id == mid, User.is_active == True).first()  # noqa: E712
+            if not boss:
+                raise HTTPException(status_code=404, detail="Manager not found")
+            if boss.role not in ("manager", "admin"):
+                raise HTTPException(status_code=400, detail="People can only report to a team leader or an admin")
+            # Walk up from the new boss — if we reach the target, it's a loop.
+            seen = {target.id}
+            node = boss
+            while node:
+                if node.id in seen:
+                    raise HTTPException(status_code=400, detail="That would create a reporting loop")
+                seen.add(node.id)
+                node = (db.query(User).filter(User.id == node.manager_id).first()
+                        if node.manager_id else None)
+            target.manager_id = mid
+
+    db.commit()
+    db.refresh(target)
+    return public_user(target)
