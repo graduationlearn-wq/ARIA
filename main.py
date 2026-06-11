@@ -20,12 +20,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import settings
 from database import init_db, SessionLocal
-from routes import webhook, leads, approval, chat, admin, auth
+from routes import webhook, leads, approval, chat, admin, auth, templates
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
 from services.kb_seeder import seed_kb
 from services.auth_service import seed_users, assign_unowned_leads
+from services.template_service import seed_templates
 
 # ── Background scheduler (follow-up jobs) ────────────────────────────────────
 _scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_users(_db)
         assign_unowned_leads(_db)
+        seed_templates(_db)
     finally:
         _db.close()
     _scheduler.start()
@@ -88,6 +90,7 @@ app.include_router(approval.router)
 app.include_router(scheduler_route.router)
 app.include_router(chat.router)
 app.include_router(admin.router)
+app.include_router(templates.router)
 
 # ── Dashboard SPA (served at /ui so it's same-origin with the API) ────────────
 _dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")

@@ -43,4 +43,10 @@ logs/
 .coverage
 htmlcov/
 
+# Email template attachments — real company documents stay out of the repo.
+# The directory is kept (.gitkeep); upload files via the dashboard's
+# template manager (Lead detail → Compose → Manage templates).
+template_files/*
+!template_files/.gitkeep
+
 .claude/

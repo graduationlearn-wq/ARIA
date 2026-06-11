@@ -14,12 +14,18 @@ For Gmail (dev/testing):
   SMTP_PASSWORD=xxxx xxxx xxxx xxxx   ← App Password (not your real password)
 """
 
+import os
 import re
 import html as _html
 import smtplib
+from email.mime.application import MIMEApplication
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
+
+# Uploaded attachment files are stored as "t{template_id}__{original_name}" —
+# strip that prefix so the recipient sees the clean original filename.
+_UPLOAD_PREFIX = re.compile(r"^t\d+__")
 
 
 # Markdown-style link:  [visible text](https://url)
@@ -51,14 +57,18 @@ def _links_to_html(body: str) -> str:
     return tmp
 
 
-def send_email(to_address: str, subject: str, body: str) -> bool:
+def send_email(to_address: str, subject: str, body: str,
+               attachments: list[str] | None = None) -> bool:
     """
-    Send a plain-text email. Returns True on success, False on failure.
+    Send a plain-text + HTML email, optionally with file attachments
+    (list of paths on disk). Returns True on success, False on failure.
     """
     if not settings.smtp_user or not settings.smtp_password:
         print("[Email] SMTP credentials not configured — skipping send.")
         print(f"[Email] Would have sent to: {to_address}")
         print(f"[Email] Subject: {subject}")
+        if attachments:
+            print(f"[Email] Attachments: {[os.path.basename(p) for p in attachments]}")
         print(f"[Email] Body:\n{body}")
         return False
 
@@ -86,6 +96,25 @@ def send_email(to_address: str, subject: str, body: str) -> bool:
     </body></html>
     """
     msg.attach(MIMEText(html, "html"))
+
+    # With attachments: wrap text/html alternative inside a mixed container.
+    if attachments:
+        outer = MIMEMultipart("mixed")
+        for header in ("Subject", "From", "To"):
+            outer[header] = msg[header]
+            del msg[header]
+        outer.attach(msg)
+        for path in attachments:
+            try:
+                with open(path, "rb") as f:
+                    part = MIMEApplication(f.read())
+            except OSError as e:
+                print(f"[Email] Skipping unreadable attachment {path}: {e}")
+                continue
+            clean_name = _UPLOAD_PREFIX.sub("", os.path.basename(path))
+            part.add_header("Content-Disposition", "attachment", filename=clean_name)
+            outer.attach(part)
+        msg = outer
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
