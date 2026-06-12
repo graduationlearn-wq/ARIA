@@ -9,8 +9,8 @@ Endpoints:
   POST /scheduler/test-email       — send a test email to verify SMTP config
 """
 
-from fastapi import APIRouter
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from services.scheduler import (
@@ -18,10 +18,16 @@ from services.scheduler import (
     run_followup_7day, run_reengagements, run_score_decay,
     run_pending_approved_sends,
 )
+from models.user import User
+from routes.auth import get_current_user
 from utils.email_sender import send_email
 from config import settings
 
-router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
+# These are internal operator tools (manual job triggers, SMTP test) — never
+# public. Login is required for all of them; test-email is admin-only because it
+# sends mail to an arbitrary address.
+router = APIRouter(prefix="/scheduler", tags=["Scheduler"],
+                   dependencies=[Depends(get_current_user)])
 
 # Reference to the shared scheduler instance (set by main.py)
 _scheduler: BackgroundScheduler | None = None
@@ -90,11 +96,14 @@ class TestEmailRequest(BaseModel):
 
 
 @router.post("/test-email")
-def test_email(body: TestEmailRequest):
+def test_email(body: TestEmailRequest, current: User = Depends(get_current_user)):
     """
     Send a test email to verify your SMTP / SendGrid config is working.
-    Use this before connecting real leads — hit this first.
+    Use this before connecting real leads — hit this first. Admin-only:
+    it sends mail to an arbitrary address, so it must not be widely reachable.
     """
+    if current.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can send test emails")
     sent = send_email(
         to_address=body.to,
         subject="ARIA test email — BeyondSure",

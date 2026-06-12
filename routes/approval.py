@@ -22,7 +22,7 @@ from models.interaction import Interaction
 from models.lead import Lead
 from models.user import User
 from utils.email_sender import send_email
-from services.auth_service import resolve_scope
+from services.auth_service import resolve_scope, subtree_ids
 from routes.auth import get_current_user
 
 router = APIRouter(prefix="/approval", tags=["Approval Queue"],
@@ -153,11 +153,15 @@ def approval_stats(
 
 # ── POST /approval/{id}/approve ───────────────────────────────────────────────
 @router.post("/{interaction_id}/approve")
-def approve_draft(interaction_id: int, db: Session = Depends(get_db)):
+def approve_draft(
+    interaction_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
     Approve a draft and send it immediately.
     """
-    interaction = _get_pending_draft(interaction_id, db)
+    interaction = _get_pending_draft(interaction_id, db, current)
     lead = db.query(Lead).filter(Lead.id == interaction.lead_id).first()
 
     if not lead or not lead.email:
@@ -185,12 +189,13 @@ def edit_and_send(
     interaction_id: int,
     body: EditRequest,
     db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
 ):
     """
     Replace the draft text with a human-revised version, then send.
     The original ARIA draft is overwritten — reviewer_notes records what changed.
     """
-    interaction = _get_pending_draft(interaction_id, db)
+    interaction = _get_pending_draft(interaction_id, db, current)
     lead = db.query(Lead).filter(Lead.id == interaction.lead_id).first()
 
     if not lead or not lead.email:
@@ -222,12 +227,13 @@ def reject_draft(
     interaction_id: int,
     notes: str | None = None,
     db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
 ):
     """
     Reject a draft — it won't be sent. Lead stays in queue.
     Use this when ARIA's response was off and you'll handle it manually.
     """
-    interaction = _get_pending_draft(interaction_id, db)
+    interaction = _get_pending_draft(interaction_id, db, current)
     interaction.send_status = "rejected"
     interaction.reviewer_notes = notes
     db.commit()
@@ -235,7 +241,7 @@ def reject_draft(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _get_pending_draft(interaction_id: int, db: Session) -> Interaction:
+def _get_pending_draft(interaction_id: int, db: Session, current: User) -> Interaction:
     interaction = db.query(Interaction).filter(
         Interaction.id == interaction_id,
         Interaction.send_status == "pending_approval",
@@ -245,6 +251,12 @@ def _get_pending_draft(interaction_id: int, db: Session) -> Interaction:
             status_code=404,
             detail="Draft not found or already processed"
         )
+    # Scope check — a user can only act on drafts for leads in their team.
+    scope = subtree_ids(current, db)
+    if scope is not None:
+        lead = db.query(Lead).filter(Lead.id == interaction.lead_id).first()
+        if lead is None or lead.owner_id not in scope:
+            raise HTTPException(status_code=403, detail="This draft is outside your team")
     return interaction
 
 

@@ -15,6 +15,7 @@ Flow for new lead:
 
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -210,8 +211,13 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
 
 
 # ── POST /webhook/reply ───────────────────────────────────────────────────────
+class ReplyPayload(BaseModel):
+    lead_id: int
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
 @router.post("/reply")
-def receive_reply(lead_id: int, message: str, db: Session = Depends(get_db)):
+def receive_reply(payload: ReplyPayload, db: Session = Depends(get_db)):
     """
     Called when a lead replies to an email/WhatsApp message.
     Classifies intent → looks up KB → generates draft response.
@@ -220,6 +226,8 @@ def receive_reply(lead_id: int, message: str, db: Session = Depends(get_db)):
       - SendGrid Inbound Parse webhook (email replies)
       - Sent API webhook (WhatsApp replies)
     """
+    lead_id = payload.lead_id
+    message = payload.message
 
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:

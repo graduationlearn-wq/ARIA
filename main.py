@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from config import settings
+from config import settings, DEV_SESSION_SECRET
 from database import init_db, SessionLocal
 from routes import webhook, leads, approval, chat, admin, auth, templates
 from routes import scheduler as scheduler_route
@@ -39,9 +39,31 @@ _scheduler.add_job(
 )
 
 
+def _check_production_config():
+    """
+    Fail fast on a real deployment that's still using insecure dev defaults.
+    Local dev (base_url on localhost) is allowed to keep the convenient defaults.
+    """
+    if settings.is_local_host:
+        return  # developer machine — defaults are fine
+
+    problems = []
+    if settings.auth_provider == "local" and settings.session_secret == DEV_SESSION_SECRET:
+        problems.append(
+            "SESSION_SECRET is still the development default. Set a strong random "
+            "value in .env — e.g.  python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    if problems:
+        raise RuntimeError(
+            "ARIA refused to start — insecure configuration for a non-local deployment:\n  - "
+            + "\n  - ".join(problems)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: init DB, seed KB + users, start scheduler.  Shutdown: stop scheduler."""
+    _check_production_config()
     init_db()
     seed_kb()
     # Seed the 3-level demo org and backfill ownership on any existing leads.
@@ -79,7 +101,14 @@ app = FastAPI(
 )
 
 # Signed session cookie (powers login). Same-origin SPA → cookie sent automatically.
-app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax")
+# https_only marks the cookie Secure in production (HTTPS base_url) so it's never
+# sent over plain HTTP; stays off for http://localhost dev.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret,
+    same_site="lax",
+    https_only=settings.is_https,
+)
 
 
 # ── Register routes ───────────────────────────────────────────────────────────

@@ -1,5 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Insecure development default for the session secret. main.py refuses to boot
+# with this value on a non-local deployment (see _check_production_config).
+DEV_SESSION_SECRET = "aria-dev-session-secret-change-in-production"
+
 
 class Settings(BaseSettings):
     # LLM provider: "groq" or "anthropic"
@@ -24,7 +28,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Signs the session cookie. Override in .env / prod with a long random value.
-    session_secret: str = "aria-dev-session-secret-change-in-production"
+    session_secret: str = DEV_SESSION_SECRET
 
     # ── Auth provider ─────────────────────────────────────────────────────────
     # "local"  → seeded email/password login (default; great for dev/demo)
@@ -49,6 +53,15 @@ class Settings(BaseSettings):
     whatsapp_webhook_verify_token: str = ""  # set in .env — must match what you enter in Meta dashboard webhook config
 
     model_config = SettingsConfigDict(env_file=".env")
+
+    @property
+    def is_local_host(self) -> bool:
+        """True when base_url points at a local dev machine (not a real deploy)."""
+        return "localhost" in self.base_url or "127.0.0.1" in self.base_url
+
+    @property
+    def is_https(self) -> bool:
+        return self.base_url.lower().startswith("https")
 
 
 settings = Settings()
