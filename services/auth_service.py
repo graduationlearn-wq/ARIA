@@ -85,6 +85,14 @@ def viewable_users(user: User, db: Session) -> list[User]:
     return [user]
 
 
+def user_directory(db: Session) -> dict[int, dict]:
+    """{user_id: {name, role}} in one query — for sender attribution on messages."""
+    return {
+        uid: {"name": name, "role": role}
+        for uid, name, role in db.query(User.id, User.name, User.role).all()
+    }
+
+
 def public_user(u: User) -> dict:
     return {
         "id": u.id,

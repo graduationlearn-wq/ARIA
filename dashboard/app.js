@@ -567,7 +567,8 @@ async function loadConvMessages(convIdx) {
         return { from: 'lead', text: i.message, t };
       }
       if (i.handled_by === 'human') {
-        return { from: 'human', who: 'kunal', text: i.message, t };
+        // Group chat: real sender (null for messages older than attribution)
+        return { from: 'human', who_name: i.sender_name, who_role: i.sender_role, text: i.message, t };
       }
       // ARIA outbound — store badge separately so text can be safely escaped
       const badge = i.send_status === 'pending_approval'
@@ -1263,13 +1264,14 @@ async function sendHumanReply(c, input, sendBtn) {
       const data = await r.json();
       input.value = '';
 
-      // Optimistically append to the conversation thread
+      // Optimistically append to the conversation thread as the logged-in user
       if (c.messages) {
         c.messages.push({
-          from: 'human',
-          who:  'kunal',
-          text: data.message,
-          t:    new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          from:     'human',
+          who_name: data.sender_name || (CURRENT_USER && CURRENT_USER.name),
+          who_role: data.sender_role || (CURRENT_USER && CURRENT_USER.role),
+          text:     data.message,
+          t:        new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         });
         renderConvThread();   // re-renders thread + re-wires composer
         return;               // early return — composer is re-wired inside renderConvThread
@@ -1495,20 +1497,18 @@ function renderConvThread() {
 
   // Walk messages — inject a handoff divider the first time we see a human sender.
   // Preserves full lead↔ARIA history so the teammate picks up with context.
-  const FALLBACK_TM = { name: 'Team', role: 'BeyondSure', avatar: avatarUrl('BeyondSure Team') };
-
   let dividerInjected = false;
   $('conv-thread').innerHTML = c.messages.map(m => {
     let divider = '';
     if (m.from === 'human' && !dividerInjected) {
       dividerInjected = true;
-      const tm = TEAM[c.handed_to] || TEAM[m.who] || FALLBACK_TM;
+      const s = bubbleSender(m);
       divider = `
         <div class="handoff-divider">
           <div class="ho-line"></div>
           <div class="handoff-pill">
-            <div class="ho-avatar"><img src="${tm.avatar}" alt=""></div>
-            <span>ARIA handed off to <b>${tm.name}</b></span>
+            <div class="ho-avatar"><img src="${s.avatar}" alt=""></div>
+            <span>ARIA handed off to <b>${esc(s.name)}</b></span>
             <span class="ho-time">· ${c.handoff_at || 'now'}</span>
           </div>
           <div class="ho-line"></div>
@@ -1519,12 +1519,24 @@ function renderConvThread() {
   }).join('');
 }
 
+/** Sender identity for a human message: live attribution → sample persona → neutral. */
+function bubbleSender(m) {
+  if (m.who_name) {
+    return { name: m.who_name, role: roleLabel(m.who_role), roleKey: m.who_role || 'employee',
+             avatar: avatarUrl(m.who_name) };
+  }
+  const tm = TEAM[m.who];
+  if (tm) return { name: tm.name, role: tm.role, roleKey: 'employee', avatar: tm.avatar };
+  return { name: 'Team', role: 'BeyondSure', roleKey: 'team', avatar: avatarUrl('BeyondSure') };
+}
+
 function renderBubble(m) {
   if (m.from === 'human') {
-    const tm = TEAM[m.who] || { name: 'Team', role: 'BeyondSure', avatar: avatarUrl('BeyondSure') };
+    // Group chat — name + hierarchy colour per sender
+    const s = bubbleSender(m);
     return `
-      <div class="bubble-row human">
-        <div class="bubble-who"><div class="bubble-who-avatar"><img src="${tm.avatar}" alt=""></div>${esc(tm.name)} · ${esc(tm.role)}</div>
+      <div class="bubble-row human hb-${s.roleKey}">
+        <div class="bubble-who"><div class="bubble-who-avatar"><img src="${s.avatar}" alt=""></div>${esc(s.name)} · ${esc(s.role)}</div>
         <div class="bubble human">${esc(m.text)}</div>
         <div class="bubble-time">${m.t}</div>
       </div>

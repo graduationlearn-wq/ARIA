@@ -50,3 +50,12 @@ def _run_light_migrations():
     if "owner_id" not in lead_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE leads ADD COLUMN owner_id INTEGER"))
+
+    try:
+        interaction_cols = {c["name"] for c in insp.get_columns("interactions")}
+    except Exception:
+        return
+
+    if "sender_user_id" not in interaction_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE interactions ADD COLUMN sender_user_id INTEGER"))

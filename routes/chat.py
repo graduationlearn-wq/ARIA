@@ -23,6 +23,9 @@ from models.lead import Lead
 from models.interaction import Interaction
 from models.escalation import Escalation
 from models.demo import Demo
+from models.user import User
+from routes.auth import get_current_user
+from services.auth_service import subtree_ids, user_directory
 from services.chat_flow import (
     get_welcome_message,
     get_next_guided_step,
@@ -42,6 +45,39 @@ from services.demo_mailer import send_demo_confirmation
 from utils.whatsapp_sender import send_demo_whatsapp, send_alert_whatsapp
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Safe alert wrappers
+#
+# These fire internal team notifications (email + WhatsApp) from inside the
+# lead's chat request. They must NEVER raise: the escalation/demo row is already
+# committed, so the team sees it in the queue even if an alert send fails. An
+# SMTP or WhatsApp outage must not 500 the lead-facing chat.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _alert_team(lead: Lead, reason: str, message: str, db: Session,
+                whatsapp: bool = True) -> None:
+    try:
+        send_human_alert(lead, reason, message, db)
+    except Exception as e:
+        print(f"[Alert] human alert email failed for lead {lead.id}: {e}")
+    if whatsapp:
+        try:
+            send_alert_whatsapp(lead, reason)
+        except Exception as e:
+            print(f"[Alert] WhatsApp alert failed for lead {lead.id}: {e}")
+
+
+def _confirm_demo_to_lead(lead: Lead, pref: str) -> None:
+    try:
+        send_demo_confirmation(lead, pref)
+    except Exception as e:
+        print(f"[Demo] confirmation email failed for lead {lead.id}: {e}")
+    try:
+        send_demo_whatsapp(lead, pref)
+    except Exception as e:
+        print(f"[Demo] WhatsApp confirmation failed for lead {lead.id}: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -563,7 +599,7 @@ function linkify(raw) {
 }
 
 /* ── Render ──────────────────────────────────────────────────────── */
-function addBubble(role, text, ts, options, handledBy) {
+function addBubble(role, text, ts, options, handledBy, who) {
   const msgs = document.getElementById('messages');
   const grp  = document.createElement('div');
 
@@ -574,7 +610,7 @@ function addBubble(role, text, ts, options, handledBy) {
   if (isHuman) {
     const lbl = document.createElement('div');
     lbl.className = 'human-lbl';
-    lbl.textContent = '👤 BeyondSure Team';
+    lbl.textContent = who ? ('👤 ' + who + ' · BeyondSure') : '👤 BeyondSure Team';
     grp.appendChild(lbl);
   }
 
@@ -686,14 +722,14 @@ async function pollForTeamReplies() {
     // Only add messages that are new AND sent by a human team member
     data.messages.slice(knownMsgCount).forEach(m => {
       if (m.handled_by === 'human') {
-        // Insert "Team joined" divider on first human message
+        // Insert "joined" divider on first human message
         if (!document.querySelector('.team-joined')) {
           const div = document.createElement('div');
           div.className = 'team-joined';
-          div.textContent = 'A team member has joined';
+          div.textContent = m.who ? (m.who + ' from BeyondSure has joined') : 'A team member has joined';
           document.getElementById('messages').appendChild(div);
         }
-        addBubble('human', m.text, m.timestamp, null, 'human');
+        addBubble('human', m.text, m.timestamp, null, 'human', m.who);
       }
     });
     knownMsgCount = data.messages.length;
@@ -712,7 +748,7 @@ async function loadHistory() {
       return;
     }
     if (data.messages && data.messages.length > 0) {
-      data.messages.forEach(m => addBubble(m.role, m.text, m.timestamp, null, m.handled_by));
+      data.messages.forEach(m => addBubble(m.role, m.text, m.timestamp, null, m.handled_by, m.who));
       knownMsgCount = data.messages.length;
       if (data.last_options && data.last_options.length) addOptions(data.last_options);
       // If conversation was already escalated, start polling for team replies
@@ -784,10 +820,20 @@ def get_chat_history(token: str, db: Session = Depends(get_db)):
     if not history:
         return {"messages": [], "welcome": get_welcome_message(lead)}
 
+    # First names of team senders (group chat) — never roles or emails.
+    directory = user_directory(db)
+
+    def _who(i: Interaction) -> str | None:
+        if i.handled_by != "human" or not i.sender_user_id:
+            return None
+        name = directory.get(i.sender_user_id, {}).get("name")
+        return name.split()[0] if name else None
+
     messages = [
         {
             "role": "user" if i.direction == "inbound" else "aria",
             "handled_by": i.handled_by or "aria",
+            "who": _who(i),
             "text": i.message_text or "",
             "timestamp": i.timestamp.isoformat() if i.timestamp else None,
         }
@@ -892,8 +938,7 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
             assigned_to="human_queue",
         )
         db.add(escalation)
-        send_human_alert(lead, intent.label, message, db)
-        send_alert_whatsapp(lead, intent.label)
+        _alert_team(lead, intent.label, message, db)
         db.commit()
         outbound_text = (
             "Of course! I've notified our team and someone will reach out to you shortly. "
@@ -947,8 +992,7 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
                     assigned_to="human_queue",
                 )
                 db.add(escalation)
-                send_human_alert(lead, "escalation_request", message, db)
-                send_alert_whatsapp(lead, "escalation_request")
+                _alert_team(lead, "escalation_request", message, db)
                 db.commit()
                 out = (
                     "Of course! 🙌 I've notified our team and someone will reach out "
@@ -1009,16 +1053,12 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
             )
             db.add(demo_row)
 
-            # Send confirmation email to lead
-            send_demo_confirmation(lead, pref)
-
-            # Send WhatsApp confirmation to lead
-            send_demo_whatsapp(lead, pref)
+            # Send confirmation (email + WhatsApp) to the lead
+            _confirm_demo_to_lead(lead, pref)
 
             # Fire human alert (email + WhatsApp to team)
             if not lead.alert_sent_at:
-                send_human_alert(lead, "demo_request", message, db)
-                send_alert_whatsapp(lead, "demo_request")
+                _alert_team(lead, "demo_request", message, db)
 
             db.commit()
 
@@ -1062,10 +1102,10 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
 
         db.flush()
 
-        # Check alert threshold
+        # Check alert threshold (email-only, matching original behaviour)
         if should_alert_human(lead, intent.label):
             lead.status = "needs_human"
-            send_human_alert(lead, intent.label, message, db)
+            _alert_team(lead, intent.label, message, db, whatsapp=False)
 
         next_step = get_next_guided_step(lead)
         db.commit()
@@ -1113,8 +1153,7 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
                 assigned_to="human_queue",
             )
             db.add(escalation)
-            send_human_alert(lead, "unclear", message, db)
-            send_alert_whatsapp(lead, "unclear")
+            _alert_team(lead, "unclear", message, db)
             db.commit()
             out = (
                 "I want to make sure I give you the right answer — "
@@ -1178,10 +1217,10 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
     # Contextual option buttons
     options = get_contextual_options(intent.label)
 
-    # Check alert threshold
+    # Check alert threshold (email-only, matching original behaviour)
     if should_alert_human(lead, intent.label):
         lead.status = "needs_human"
-        send_human_alert(lead, intent.label, message, db)
+        _alert_team(lead, intent.label, message, db, whatsapp=False)
 
     db.commit()
     _log_outbound(lead, response_text, intent.label, db)
@@ -1198,15 +1237,24 @@ def chat_message(token: str, body: ChatMessage, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/admin/{lead_id}")
-def admin_chat_view(lead_id: int, db: Session = Depends(get_db)):
+def admin_chat_view(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
-    Returns the full conversation for a lead. Used in the human alert link.
-    No token required — internal use only.
+    Returns the full conversation for a lead (login + scope required).
+    Used by the dashboard inbox and the human alert link.
     """
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    scope = subtree_ids(current, db)
+    if scope is not None and lead.owner_id not in scope:
+        raise HTTPException(status_code=403, detail="This lead is outside your team")
+
+    directory = user_directory(db)
     history = (
         db.query(Interaction)
         .filter(Interaction.lead_id == lead_id)
@@ -1239,10 +1287,12 @@ def admin_chat_view(lead_id: int, db: Session = Depends(get_db)):
             {
                 "id": i.id,
                 "direction": i.direction,
-                "role": "lead" if i.direction == "inbound" else "aria",
+                "role": "lead" if i.direction == "inbound" else ("human" if i.handled_by == "human" else "aria"),
                 "text": i.message_text,
                 "intent": i.intent_label,
                 "type": i.message_type,
+                "sender_name": directory.get(i.sender_user_id, {}).get("name") if i.sender_user_id else None,
+                "sender_role": directory.get(i.sender_user_id, {}).get("role") if i.sender_user_id else None,
                 "timestamp": i.timestamp.isoformat() if i.timestamp else None,
             }
             for i in history
@@ -1259,14 +1309,25 @@ class HumanReply(BaseModel):
 
 
 @router.post("/admin/{lead_id}/reply")
-def admin_send_reply(lead_id: int, body: HumanReply, db: Session = Depends(get_db)):
+def admin_send_reply(
+    lead_id: int,
+    body: HumanReply,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     """
-    Team member sends a message directly into a lead's chat thread.
+    Team member sends a message into a lead's chat thread (group chat).
+    Login required — the sender is taken from the session, never the client.
+    Only the lead's chain may write: owner employee, their team leader, admin.
     The lead's chat page polls for this and displays it in real-time.
     """
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+
+    scope = subtree_ids(current, db)
+    if scope is not None and lead.owner_id not in scope:
+        raise HTTPException(status_code=403, detail="This lead is outside your team")
 
     interaction = Interaction(
         lead_id=lead.id,
@@ -1275,6 +1336,7 @@ def admin_send_reply(lead_id: int, body: HumanReply, db: Session = Depends(get_d
         message_text=body.message.strip(),
         message_type="chat_out",
         handled_by="human",
+        sender_user_id=current.id,
         send_status="sent",
     )
     db.add(interaction)
@@ -1286,10 +1348,12 @@ def admin_send_reply(lead_id: int, body: HumanReply, db: Session = Depends(get_d
     db.refresh(interaction)
 
     return {
-        "id":        interaction.id,
-        "message":   interaction.message_text,
-        "timestamp": interaction.timestamp.isoformat(),
-        "lead_name": lead.first_name,
+        "id":          interaction.id,
+        "message":     interaction.message_text,
+        "timestamp":   interaction.timestamp.isoformat(),
+        "lead_name":   lead.first_name,
+        "sender_name": current.name,
+        "sender_role": current.role,
     }
 
 

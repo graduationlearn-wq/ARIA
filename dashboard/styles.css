@@ -813,6 +813,15 @@ body {
   margin-bottom: 2px;
   display: inline-flex; align-items: center; gap: 4px;
 }
+
+/* Group chat — hierarchy colours per sender (admin / team leader / employee) */
+.hb-admin    .bubble.human { background: linear-gradient(135deg, #5b21b6, #7c3aed); }
+.hb-admin    .bubble-who   { color: #6d28d9; }
+.hb-manager  .bubble.human { background: linear-gradient(135deg, #b45309, #d97706); }
+.hb-manager  .bubble-who   { color: #b45309; }
+.hb-employee .bubble.human { background: linear-gradient(135deg, #047857, #059669); }
+.hb-employee .bubble-who   { color: #047857; }
+/* .hb-team (legacy unattributed messages) keeps the neutral slate style */
 .bubble-who-avatar { width: 14px; height: 14px; border-radius: 50%; }
 .bubble-who-avatar img { width: 100%; height: 100%; border-radius: 50%; display: block; }
 

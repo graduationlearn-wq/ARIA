@@ -23,7 +23,7 @@ from services.lead_scorer import score_breakdown
 from services.stages import (
     STAGE_ORDER, STAGE_LABELS, FUNNEL_TRACK, lead_stage,
 )
-from services.auth_service import resolve_scope, subtree_ids
+from services.auth_service import resolve_scope, subtree_ids, user_directory
 from routes.auth import get_current_user
 
 # Every leads endpoint requires a logged-in user.
@@ -389,6 +389,7 @@ def get_lead(
         raise HTTPException(status_code=403, detail="Not allowed to view this lead")
 
     names = _owner_names(db)
+    directory = user_directory(db)
 
     interactions = (
         db.query(Interaction)
@@ -451,6 +452,8 @@ def get_lead(
                 "intent": i.intent_label,
                 "send_status": i.send_status,
                 "handled_by": i.handled_by,
+                "sender_name": directory.get(i.sender_user_id, {}).get("name") if i.sender_user_id else None,
+                "sender_role": directory.get(i.sender_user_id, {}).get("role") if i.sender_user_id else None,
                 "timestamp": i.timestamp,
             }
             for i in interactions

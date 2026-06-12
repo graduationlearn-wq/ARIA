@@ -26,6 +26,10 @@ class Interaction(Base):
     # aria | human
     handled_by: Mapped[str] = mapped_column(String(20), default="aria")
 
+    # Which team member sent this (group-chat attribution). NULL for ARIA
+    # messages and for human messages sent before this column existed.
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
+
     # For outbound messages in human_approval_mode:
     # pending_approval | approved | sent | rejected
     send_status: Mapped[str] = mapped_column(String(30), nullable=True)

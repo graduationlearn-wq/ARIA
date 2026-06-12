@@ -243,6 +243,7 @@ def send_template(
         channel="email",
         message_text=f"[{subject}]\n\n{body}",
         handled_by="human",
+        sender_user_id=current.id,
         send_status="sent" if sent else "failed",
         message_type="template",
     )
