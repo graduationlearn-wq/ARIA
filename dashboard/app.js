@@ -241,8 +241,30 @@ async function bootDashboard() {
   renderAll();
 }
 
+/**
+ * Parse an API timestamp into a Date in the viewer's local timezone.
+ * Backend timestamps are naive UTC (no offset), so a value without a tz is
+ * treated as UTC; a bare "YYYY-MM-DD" key is treated as local midnight.
+ */
+function parseApiDate(s) {
+  if (!s) return null;
+  if (s instanceof Date) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);            // local midnight
+  }
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z');  // naive → UTC
+}
+
+/** Local "YYYY-MM-DD" key for a Date (so day buckets match the viewer's calendar). */
+function localDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function mapApiLead(l) {
-  const dateStr = l.created_at ? l.created_at.split('T')[0] : new Date().toISOString().split('T')[0];
+  // Local calendar date the lead arrived — a UTC timestamp like 2026-06-04T22:06
+  // is 2026-06-05 in IST, so bucket it on the day the user actually sees.
+  const dateStr = l.created_at ? localDateKey(parseApiDate(l.created_at)) : localDateKey(new Date());
   const t = l.type || 'agent';
   const src = (l.source || '').toLowerCase();
   const channel = (src === 'ig' || src === 'instagram') ? 'instagram' : 'facebook';
@@ -642,7 +664,7 @@ function wireNav() {
 function newThisWeek() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 7);
-  return LEADS.filter(l => l.created_at && new Date(l.created_at) >= cutoff).length;
+  return LEADS.filter(l => { const d = parseApiDate(l.created_at); return d && d >= cutoff; }).length;
 }
 
 function renderKPIs() {
@@ -785,7 +807,7 @@ function buildChartBuckets(mode) {
     for (let i = 11; i >= 0; i--) {
       const end = new Date(now); end.setDate(now.getDate() - i * 7); end.setHours(23,59,59,999);
       const start = new Date(end); start.setDate(end.getDate() - 6); start.setHours(0,0,0,0);
-      const leads = LEADS.filter(l => { const d = new Date(l.created_at); return d >= start && d <= end; })
+      const leads = LEADS.filter(l => { const d = parseApiDate(l.created_at); return d && d >= start && d <= end; })
         .sort((a, b) => b.score - a.score);
       buckets.push({ leads, label: `${MONTHS[start.getMonth()]} ${start.getDate()}`, isLast: i === 0 });
     }
@@ -793,15 +815,15 @@ function buildChartBuckets(mode) {
     for (let i = 5; i >= 0; i--) {
       const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const leads = LEADS.filter(l => {
-        const d = new Date(l.created_at);
-        return d.getFullYear() === dt.getFullYear() && d.getMonth() === dt.getMonth();
+        const d = parseApiDate(l.created_at);
+        return d && d.getFullYear() === dt.getFullYear() && d.getMonth() === dt.getMonth();
       }).sort((a, b) => b.score - a.score);
       buckets.push({ leads, label: MONTHS[dt.getMonth()], isLast: i === 0 });
     }
   } else { // day — last 28 days
     for (let i = 27; i >= 0; i--) {
       const dt = new Date(now); dt.setDate(now.getDate() - i);
-      const key = dt.toISOString().split('T')[0];
+      const key = localDateKey(dt);   // local calendar date — matches mapApiLead's key
       const leads = LEADS.filter(l => inDay(l, key)).sort((a, b) => b.score - a.score);
       buckets.push({ leads, label: `${MONTHS[dt.getMonth()]} ${dt.getDate()}`, isLast: i === 0 });
     }
