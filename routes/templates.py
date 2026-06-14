@@ -101,9 +101,16 @@ def _template_json(tpl: EmailTemplate) -> dict:
 
 
 def _sanitize_filename(raw: str) -> str:
-    """basename + character whitelist; rejects empty/dot-only results."""
-    name = os.path.basename(raw or "").strip()
-    name = _SAFE_NAME.sub("_", name)
+    """
+    Reduce an uploaded filename to a safe basename. Treats BOTH '/' and '\\' as
+    separators (os.path.basename is platform-dependent — backslashes aren't
+    separators on Linux), then whitelists characters and removes any traversal
+    dot-runs so the stored name can never contain '..'.
+    """
+    name = (raw or "").replace("\\", "/").split("/")[-1].strip()
+    name = _SAFE_NAME.sub("_", name)      # whitelist: letters, digits, . _ space -
+    name = name.lstrip(".")               # no leading dots (hidden / traversal)
+    name = re.sub(r"\.{2,}", ".", name)   # collapse any remaining ".." runs
     if not name or name.strip("._ ") == "":
         raise HTTPException(status_code=400, detail="Invalid filename")
     return name

@@ -6,6 +6,8 @@ rendering, CRUD, preview, send (with Interaction logging), and attachments.
 from io import BytesIO
 from unittest.mock import patch
 
+import pytest
+
 from models.email_template import EmailTemplate
 from models.interaction import Interaction
 from models.lead import Lead
@@ -247,15 +249,26 @@ class TestAttachments:
         )
         assert r.status_code == 400
 
-    def test_upload_sanitizes_traversal_filename(self, client, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("bad_name", [
+        "..\\..\\sneaky.pdf",   # Windows-style separators
+        "../../sneaky.pdf",     # POSIX-style separators
+        "/etc/passwd.pdf",      # absolute path
+        "....//sneaky.pdf",     # dot-run obfuscation
+    ])
+    def test_upload_sanitizes_traversal_filename(self, client, tmp_path, monkeypatch, bad_name):
+        # Must behave identically on every OS — os.path.basename is platform-
+        # dependent, so traversal must be neutralised without relying on it.
         monkeypatch.setattr("routes.templates.TEMPLATE_FILES_DIR", str(tmp_path))
         tpl = make_template(client)
 
         r = client.post(
             f"/templates/{tpl['id']}/attachments",
-            files={"file": ("..\\..\\sneaky.pdf", BytesIO(b"%PDF"), "application/pdf")},
+            files={"file": (bad_name, BytesIO(b"%PDF"), "application/pdf")},
         )
         assert r.status_code == 200
         stored = r.json()["attachments"][0]["file"]
         assert ".." not in stored
         assert "/" not in stored and "\\" not in stored
+        assert stored.startswith(f"t{tpl['id']}__")
+        # The stored file actually lands inside the template dir, nowhere else.
+        assert (tmp_path / stored).is_file()
