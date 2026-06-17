@@ -106,14 +106,18 @@ def public_user(u: User) -> dict:
 
 # ── Round-robin lead ownership ────────────────────────────────────────────────
 
-def next_owner_id(db: Session) -> int | None:
+def next_owner_id(db: Session, among: set[int] | None = None) -> int | None:
     """
     Pick the active employee with the fewest leads (balanced round-robin).
-    Returns None if there are no employees yet (e.g. in tests).
+    `among` optionally restricts the candidates to a set of user ids (a team).
+    Returns None if there are no eligible employees (e.g. in tests).
     """
-    employees = db.query(User).filter(
+    q = db.query(User).filter(
         User.role == "employee", User.is_active == True  # noqa: E712
-    ).all()
+    )
+    if among is not None:
+        q = q.filter(User.id.in_(among))
+    employees = q.all()
     if not employees:
         return None
     counts = {
@@ -121,6 +125,20 @@ def next_owner_id(db: Session) -> int | None:
         for e in employees
     }
     return min(counts, key=counts.get)
+
+
+def assignment_pool(user: "User | None", db: Session) -> set[int] | None:
+    """
+    The employee ids an ingested lead should auto-distribute across, by source:
+      • system sources (webhook/email) or admin → None = every active employee
+      • team leader (manager) → their own team (next_owner_id filters to its employees)
+      • employee → themselves (they can't hand leads to others)
+    """
+    if user is None or user.role == "admin":
+        return None
+    if user.role == "manager":
+        return subtree_ids(user, db)
+    return {user.id}
 
 
 # ── Seeding the demo org ──────────────────────────────────────────────────────

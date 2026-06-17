@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
 
@@ -176,6 +176,34 @@
         </div>
         <div class="modal-error" id="addlead-error" hidden></div>
       </form>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━ IMPORT LEADS MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="import-overlay" hidden>
+    <div class="modal" id="import-modal">
+      <div class="modal-head">
+        <h2>Import leads</h2>
+        <button class="modal-close" id="import-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-sub">Upload a CSV or Excel file. Leads are <b>auto-assigned</b> <span id="import-owner">across your team</span> and scored automatically. <a href="/leads/import-template" id="import-template-link">Download template</a></p>
+
+      <label class="import-drop" id="import-drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span class="import-drop-main" id="import-filename">Choose a .csv or .xlsx file</span>
+        <span class="import-drop-sub">Columns: Name, Email, Phone, Company, State, Type, Source, Team Size…</span>
+        <input type="file" id="import-file" accept=".csv,.xlsx,.xls" hidden>
+      </label>
+
+      <div class="import-result" id="import-result" hidden></div>
+      <div class="modal-error" id="import-error" hidden></div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn-ghost" id="import-cancel">Close</button>
+        <button type="button" class="primary-btn" id="import-submit" disabled>Import leads</button>
+      </div>
     </div>
   </div>
 
@@ -442,6 +470,10 @@
               <div class="head-tools">
                 <button class="icon-btn sm" id="leads-search-btn" title="Search leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
                 <button class="icon-btn sm" id="leads-sort-btn" title="Sort"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg></button>
+                <button class="btn-ghost sm" id="import-leads-btn" title="Import leads from CSV or Excel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                  Import
+                </button>
                 <button class="primary-btn" id="add-lead-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
                   Add lead
@@ -756,7 +788,7 @@
   </main>
 </div>
 
-<script src="data.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="data.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

@@ -1081,14 +1081,14 @@ function renderLeadDetail(data) {
   const canAssign = CURRENT_USER && CURRENT_USER.role !== 'employee' && ASSIGNABLE_OWNERS.length;
   const ownerSectionHtml = canAssign
     ? `<div class="ld-section">
-         <div class="ld-section-title">Owner</div>
+         <div class="ld-section-title">Assigned to</div>
          <select class="ld-stage-select" id="ld-owner">
            ${ASSIGNABLE_OWNERS.map(o => `<option value="${o.id}" ${l.owner_id === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
          </select>
-         <div class="ld-score-note">The employee who owns this lead. Reassign to balance the team.</div>
+         <div class="ld-score-note">Auto-assigned on arrival. Reassign here to rebalance the team.</div>
        </div>`
     : (l.owner_name
-        ? `<div class="ld-section"><div class="ld-section-title">Owner</div>${row('Brought by', esc(l.owner_name))}</div>`
+        ? `<div class="ld-section"><div class="ld-section-title">Assigned to</div>${row('Handled by', esc(l.owner_name))}</div>`
         : '');
 
   const bd = l.score_breakdown || {};
@@ -2323,6 +2323,85 @@ function openAddLead() {
 }
 function closeAddLead() { const ov = $('addlead-overlay'); if (ov) ov.hidden = true; }
 
+/* ── Import leads (CSV / Excel) ── */
+let importFile = null;
+
+function openImport() {
+  const ov = $('import-overlay');
+  if (!ov) return;
+  importFile = null;
+  $('import-file').value = '';
+  $('import-filename').textContent = 'Choose a .csv or .xlsx file';
+  $('import-result').hidden = true;
+  $('import-error').hidden = true;
+  $('import-submit').disabled = true;
+  // Where the leads will be auto-assigned depends on the uploader's role.
+  if ($('import-owner')) {
+    const role = CURRENT_USER && CURRENT_USER.role;
+    $('import-owner').textContent =
+      role === 'admin'   ? 'across all employees' :
+      role === 'manager' ? 'across your team' :
+                           'to you';
+  }
+  ov.hidden = false;
+}
+function closeImport() { const ov = $('import-overlay'); if (ov) ov.hidden = true; }
+
+function onImportFile(e) {
+  const f = e.target.files[0];
+  importFile = f || null;
+  $('import-filename').textContent = f ? f.name : 'Choose a .csv or .xlsx file';
+  $('import-submit').disabled = !f;
+  $('import-error').hidden = true;
+}
+
+async function submitImport() {
+  if (!importFile) return;
+  const btn = $('import-submit');
+  const err = $('import-error');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Importing…';
+  err.hidden = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', importFile);
+    const r = await fetch('/leads/import', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Import failed');
+    renderImportResult(d);
+    await loadLiveData();
+    renderAll();
+    toast(`Imported ${d.imported} lead${d.imported === 1 ? '' : 's'} · auto-assigned`);
+  } catch (ex) {
+    err.textContent = ex.message || 'Could not import the file.';
+    err.hidden = false;
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+}
+
+function renderImportResult(d) {
+  const host = $('import-result');
+  const errRows = (d.errors || []).slice(0, 8)
+    .map(e => `<li>Row ${e.row}: ${esc(e.reason)}</li>`).join('');
+  const moreErr = (d.errors || []).length > 8 ? `<li>…and ${d.errors.length - 8} more</li>` : '';
+  const assigned = d.assigned || [];
+  const distRow = assigned.length
+    ? `<div class="imp-note">Auto-assigned: ${assigned.map(a => `${esc(a.owner_name || 'Employee')} (${a.count})`).join(' · ')}</div>`
+    : '';
+  host.innerHTML = `
+    <div class="imp-summary">
+      <span class="imp-stat imp-ok">${d.imported} imported</span>
+      <span class="imp-stat imp-dup">${d.duplicates} duplicate${d.duplicates === 1 ? '' : 's'}</span>
+      <span class="imp-stat imp-err">${(d.errors || []).length} skipped</span>
+    </div>
+    <div class="imp-note">From ${d.total_rows} row${d.total_rows === 1 ? '' : 's'}</div>
+    ${distRow}
+    ${errRows ? `<ul class="imp-errlist">${errRows}${moreErr}</ul>` : ''}`;
+  host.hidden = false;
+  $('import-submit').textContent = 'Import another';
+}
+
 async function submitAddLead(e) {
   e.preventDefault();
   const form = $('addlead-form');
@@ -2422,6 +2501,13 @@ function wireLeadsView() {
   $('addlead-cancel')?.addEventListener('click', closeAddLead);
   $('addlead-form')?.addEventListener('submit', submitAddLead);
   $('addlead-overlay')?.addEventListener('click', e => { if (e.target.id === 'addlead-overlay') closeAddLead(); });
+
+  $('import-leads-btn')?.addEventListener('click', openImport);
+  $('import-close')?.addEventListener('click', closeImport);
+  $('import-cancel')?.addEventListener('click', closeImport);
+  $('import-file')?.addEventListener('change', onImportFile);
+  $('import-submit')?.addEventListener('click', submitImport);
+  $('import-overlay')?.addEventListener('click', e => { if (e.target.id === 'import-overlay') closeImport(); });
 
   $('leaddetail-close')?.addEventListener('click', closeLeadDetail);
   $('leaddetail-overlay')?.addEventListener('click', e => { if (e.target.id === 'leaddetail-overlay') closeLeadDetail(); });

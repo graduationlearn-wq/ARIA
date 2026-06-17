@@ -1797,6 +1797,27 @@ a.attach-chip:hover { background: #ede9fe; }
 
 @media (max-width: 640px) { .tplmgr-body { grid-template-columns: 1fr; } }
 
+/* ━━━━━━━━━━━━━ IMPORT LEADS ━━━━━━━━━━━━━ */
+.import-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--r-md);
+  padding: 26px 18px; margin: 4px 0 14px; cursor: pointer; text-align: center;
+  background: var(--bg-soft); transition: border-color .12s, background .12s;
+}
+.import-drop:hover { border-color: var(--pri-400); background: var(--pri-50); }
+.import-drop svg { width: 28px; height: 28px; color: var(--pri-500); }
+.import-drop-main { font-size: 13.5px; font-weight: 700; color: var(--ink-1); word-break: break-all; }
+.import-drop-sub { font-size: 11.5px; color: var(--ink-4); }
+
+.import-result { margin: 4px 0 12px; }
+.imp-summary { display: flex; gap: 8px; flex-wrap: wrap; }
+.imp-stat { font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 100px; }
+.imp-ok  { background: #dcfce7; color: #047857; }
+.imp-dup { background: #fef9c3; color: #a16207; }
+.imp-err { background: #fee2e2; color: #b91c1c; }
+.imp-note { font-size: 12px; color: var(--ink-4); margin-top: 8px; }
+.imp-errlist { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--ink-3); line-height: 1.7; }
+
 /* ━━━━━━━━━━━━━ TEAM & ROLES (admin) ━━━━━━━━━━━━━ */
 .team-row {
   display: grid; grid-template-columns: 36px 1fr 130px 200px;
