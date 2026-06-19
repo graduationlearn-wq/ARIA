@@ -63,6 +63,26 @@ class TestParsing:
         with pytest.raises(ValueError):
             lead_importer.parse_rows("data.txt", b"a,b\n1,2\n")
 
+    def test_meta_facebook_export_columns(self):
+        # The real marketing sheet is the Meta/Facebook Lead Ads export: long
+        # question headers + a "p:" phone prefix. All of it must map.
+        header = (
+            "platform,"
+            "do_you_currently_use_any_software_or_digital_platform_to_manage_your_leads,"
+            "are_you_open_to_adopting_a_new_technology_platform_if_it_helps_you,"
+            "would_you_be_willing_to_evaluate_a_new_tech_solution_through_a_demo_or_trial,"
+            "types_of_business,first_name,email,phone,state,company_name\n"
+        )
+        row = "fb,no,yes,yes,posp_advisor,Mustafa,m@x.in,p:+919520771486,Uttar Pradesh,Pasha Insurance\n"
+        f = lead_importer.to_lead_fields(lead_importer.parse_rows("x.csv", (header + row).encode())[0])
+        assert f["first_name"] == "Mustafa"
+        assert f["phone"] == "+919520771486"          # "p:" prefix stripped
+        assert f["lead_type"] == "posp_advisor"        # types_of_business
+        assert f["uses_software"] is False             # long question header
+        assert f["open_to_platform"] is True
+        assert f["willing_for_demo"] is True
+        assert f["source"] == "facebook"               # platform=fb
+
     def test_xlsx_parsing(self):
         openpyxl = pytest.importorskip("openpyxl")
         wb = openpyxl.Workbook()
@@ -216,6 +236,20 @@ class TestAssignmentPolicy:
         assert next_owner_id(db, among={e1.id, e2.id}) == e2.id
         # Restricted to just e1, it's the only candidate.
         assert next_owner_id(db, among={e1.id}) == e1.id
+
+
+class TestManualAddProfile:
+    def test_webhook_accepts_team_size_and_website(self, client, db):
+        # The manual "Add lead" form posts here; it can now carry the richer profile.
+        r = client.post("/webhook/lead", json={
+            "first_name": "Manual", "email": "manual@test.in", "phone": "9000000001",
+            "types_of_business": "broker", "platform": "fb",
+            "team_size": 18, "company_website": "manual.in",
+        })
+        assert r.status_code == 200
+        lead = db.query(Lead).filter(Lead.email == "manual@test.in").first()
+        assert lead.team_size == 18
+        assert lead.company_website == "manual.in"
 
 
 class TestTemplate:

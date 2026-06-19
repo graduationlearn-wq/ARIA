@@ -20,12 +20,12 @@ from database import get_db
 from models.lead import Lead
 from models.interaction import Interaction
 from models.user import User
-from services.lead_scorer import score_breakdown, score_lead
+from services.lead_scorer import score_breakdown
 from services.stages import (
     STAGE_ORDER, STAGE_LABELS, FUNNEL_TRACK, lead_stage,
 )
-from services.auth_service import resolve_scope, subtree_ids, user_directory, assignment_pool
-from services import lead_importer
+from services.auth_service import resolve_scope, subtree_ids, user_directory
+from services import lead_importer, lead_intake
 from routes.auth import get_current_user
 
 # Every leads endpoint requires a logged-in user.
@@ -119,6 +119,9 @@ def list_leads(
             "quality": l.lead_quality,
             "status": l.status,
             "current_intent": l.current_intent,
+            "uses_software": l.uses_software,
+            "open_to_platform": l.open_to_platform,
+            "company_website": l.company_website,
             "willing_for_demo": l.willing_for_demo,
             "demo_preference": l.demo_preference,
             "human_priority": l.human_priority,
@@ -220,95 +223,8 @@ async def import_leads(
             detail=f"Too many rows ({len(rows)}). Limit is {lead_importer.MAX_ROWS} per import.",
         )
 
-    # Pre-load existing email/phone for O(1) dedup against the whole DB.
-    existing_emails = {e.lower() for (e,) in db.query(Lead.email).filter(Lead.email.isnot(None)).all() if e}
-    existing_phones = {p for (p,) in db.query(Lead.phone).filter(Lead.phone.isnot(None)).all() if p}
-    seen_email: set[str] = set()
-    seen_phone: set[str] = set()
-
-    # Auto-distribution: balance new leads across the right team, in memory.
-    pool = assignment_pool(current, db)
-    emp_q = db.query(User).filter(User.role == "employee", User.is_active == True)  # noqa: E712
-    if pool is not None:
-        emp_q = emp_q.filter(User.id.in_(pool))
-    pool_emps = emp_q.all()
-    counts = {e.id: db.query(Lead).filter(Lead.owner_id == e.id).count() for e in pool_emps}
-    emp_names = {e.id: e.name for e in pool_emps}
-
-    def assign_owner() -> int:
-        # Fewest-leads-first; falls back to the uploader if there are no employees.
-        if not counts:
-            return current.id
-        eid = min(counts, key=counts.get)
-        counts[eid] += 1
-        return eid
-
-    imported, duplicates = 0, 0
-    errors: list[dict] = []
-    distribution: dict[int, int] = {}
-
-    for idx, raw in enumerate(rows, start=1):
-        f = lead_importer.to_lead_fields(raw)
-        name = f.get("first_name")
-        email = f.get("email")
-        phone = f.get("phone")
-
-        if not name or not (email or phone):
-            errors.append({"row": idx, "reason": "missing name or contact (email/phone)"})
-            continue
-        if email and (email in existing_emails or email in seen_email):
-            duplicates += 1
-            continue
-        if phone and (phone in existing_phones or phone in seen_phone):
-            duplicates += 1
-            continue
-
-        owner_id = assign_owner()
-        lead = Lead(
-            first_name=name,
-            email=email,
-            phone=phone,
-            state=f.get("state"),
-            company_name=f.get("company_name"),
-            lead_type=f.get("lead_type") or "unknown",
-            source_platform=f.get("source") or "import",
-            team_size=f.get("team_size"),
-            uses_software=f.get("uses_software"),
-            open_to_platform=f.get("open_to_platform"),
-            willing_for_demo=f.get("willing_for_demo"),
-            company_website=f.get("company_website"),
-            channel="email" if email else "whatsapp",
-            channel_id=email or phone,
-            status="new",
-            owner_id=owner_id,                         # auto-assigned to handle
-            consent_logged_at=datetime.now(timezone.utc),
-        )
-        db.add(lead)
-        db.flush()
-        score, quality = score_lead(lead)
-        lead.lead_score = score
-        lead.lead_quality = quality
-
-        imported += 1
-        distribution[owner_id] = distribution.get(owner_id, 0) + 1
-        if email:
-            seen_email.add(email)
-        if phone:
-            seen_phone.add(phone)
-
-    db.commit()
-    names = _owner_names(db)
-    return {
-        "imported": imported,
-        "duplicates": duplicates,
-        "errors": errors,
-        "total_rows": len(rows),
-        # How the imported leads were auto-distributed across the team.
-        "assigned": [
-            {"owner_id": oid, "owner_name": names.get(oid) or emp_names.get(oid), "count": n}
-            for oid, n in sorted(distribution.items(), key=lambda kv: -kv[1])
-        ],
-    }
+    # Shared create-and-auto-assign path (same as Google Sheet sync).
+    return lead_intake.intake_rows(db, rows, current, source="import")
 
 
 @router.post("/{lead_id}/meet")

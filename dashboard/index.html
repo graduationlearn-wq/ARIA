@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -103,6 +103,7 @@
           </div>
           <button class="menu-item" data-action="settings">⚙ Settings</button>
           <button class="menu-item" data-action="team" id="menu-team" hidden>👥 Team &amp; roles</button>
+          <button class="menu-item" data-action="sheets" id="menu-sheets" hidden>🔗 Lead sources (Sheets)</button>
           <button class="menu-item" data-action="kb">📚 Knowledge Base</button>
           <button class="menu-item" data-action="docs">📄 Docs &amp; help</button>
           <div class="menu-divider"></div>
@@ -139,8 +140,13 @@
               <option value="agent">Agent</option>
               <option value="imf">IMF</option>
               <option value="posp_advisor">POSP Advisor</option>
+              <option value="advisor">Advisor</option>
             </select>
           </label>
+        </div>
+        <div class="form-row">
+          <label>Team size<input name="team_size" type="number" min="1" placeholder="e.g. 12"></label>
+          <label>Website<input name="company_website" placeholder="company.in"></label>
         </div>
         <div class="form-row">
           <label>Source
@@ -259,6 +265,29 @@
       </div>
       <p class="modal-sub">The reporting tree decides who sees whose leads. Employees see their own, team leaders see their team, admins see everything.</p>
       <div id="teammgr-body"></div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━ LEAD SOURCES (SHEETS) MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="sheetmgr-overlay" hidden>
+    <div class="modal modal-wide" id="sheetmgr-modal">
+      <div class="modal-head">
+        <h2>Lead sources — Google Sheets</h2>
+        <button class="modal-close" id="sheetmgr-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-sub">ARIA polls each sheet every ~15 minutes and auto-assigns new rows to the owning team. Share the sheet as <b>"anyone with the link can view"</b> (or publish to web), then paste its link.</p>
+
+      <div class="sheet-add">
+        <input type="text" id="sheet-name" placeholder="Label (e.g. Faizan's Marketing Sheet)">
+        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/…">
+        <select id="sheet-owner" class="ld-stage-select" hidden></select>
+        <button type="button" class="primary-btn" id="sheet-add-btn">Add sheet</button>
+      </div>
+      <div class="modal-error" id="sheet-error" hidden></div>
+
+      <div id="sheetmgr-list"></div>
     </div>
   </div>
 
@@ -788,7 +817,7 @@
   </main>
 </div>
 
-<script src="data.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="data.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

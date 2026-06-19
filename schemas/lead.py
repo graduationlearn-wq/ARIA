@@ -12,6 +12,9 @@ class LeadWebhookPayload(BaseModel):
     phone: Optional[str] = None
     state: Optional[str] = None
     company_name: Optional[str] = None
+    # Optional richer profile (manual add form; FB ads don't send these)
+    team_size: Optional[int] = None
+    company_website: Optional[str] = None
     # "agent" | "broker" | "imf" | "posp_advisor" etc.
     types_of_business: Optional[str] = None
     # "yes" | "no"

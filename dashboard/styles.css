@@ -938,6 +938,20 @@ body {
 }
 .lc-name { font-weight: 700; font-size: 14px; color: var(--ink-1); }
 .lc-role { font-size: 11.5px; color: var(--ink-3); margin-top: -4px; }
+.lc-contact {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+  font-size: 11px; color: var(--ink-3); margin-top: 6px; width: 100%; min-width: 0;
+}
+.lc-contact span { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-contact svg { width: 11px; height: 11px; opacity: .7; flex-shrink: 0; }
+.lc-email { color: var(--ink-4); }
+.lc-tags { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; margin-top: 8px; }
+.lc-tag {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 100px;
+  background: var(--bg-soft); color: var(--ink-3);
+}
+.lc-tag-demo { background: #dcfce7; color: #047857; }
+.lc-tag-sw   { background: #ede9fe; color: #6d28d9; }
 .lc-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -1841,3 +1855,27 @@ a.attach-chip:hover { background: #ede9fe; }
   .team-row select { grid-column: 2; }
   .team-head { display: none; }
 }
+
+/* ━━━━━━━━━━━━━ LEAD SOURCES (SHEETS) ━━━━━━━━━━━━━ */
+.sheet-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 4px; }
+.sheet-add input { flex: 1 1 200px; font: inherit; font-size: 13px; padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
+.sheet-add input:focus { outline: none; border-color: var(--pri-300); background: var(--bg-elev); }
+.sheet-add .ld-stage-select { flex: 1 1 160px; width: auto; }
+
+.sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--line); }
+.sheet-row:last-child { border-bottom: none; }
+.sheet-info { min-width: 0; }
+.sheet-name { font-size: 13.5px; font-weight: 700; color: var(--ink-1); }
+.sheet-off { font-size: 10.5px; font-weight: 700; color: #a16207; background: #fef9c3; border-radius: 100px; padding: 1px 7px; margin-left: 6px; }
+.sheet-meta { font-size: 12px; color: var(--ink-4); margin-top: 1px; }
+.sheet-status { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.sheet-status.bad { color: #b91c1c; }
+.sheet-tools { display: flex; gap: 6px; flex-shrink: 0; }
+.sheet-empty { padding: 28px; text-align: center; color: var(--ink-4); font-size: 13px; }
+
+/* Refresh button spins + locks while it pulls sheets and reloads */
+.icon-btn.spinning svg { animation: spin 0.8s linear infinite; }
+.icon-btn:disabled { cursor: default; }
+@keyframes spin { to { transform: rotate(360deg); } }

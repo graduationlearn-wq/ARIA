@@ -20,10 +20,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import settings, DEV_SESSION_SECRET
 from database import init_db, SessionLocal
-from routes import webhook, leads, approval, chat, admin, auth, templates
+from routes import webhook, leads, approval, chat, admin, auth, templates, sheets
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
+from services.sheet_sync import run_sheet_sync
 from services.kb_seeder import seed_kb
 from services.auth_service import seed_users, assign_unowned_leads
 from services.template_service import seed_templates
@@ -35,6 +36,14 @@ _scheduler.add_job(
     trigger="interval",
     hours=1,
     id="followup_jobs",
+    replace_existing=True,
+)
+# Poll active Google Sheets for new leads every 15 minutes (auto-fetch + assign).
+_scheduler.add_job(
+    run_sheet_sync,
+    trigger="interval",
+    minutes=15,
+    id="sheet_sync",
     replace_existing=True,
 )
 
@@ -120,6 +129,7 @@ app.include_router(scheduler_route.router)
 app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(templates.router)
+app.include_router(sheets.router)
 
 # ── Dashboard SPA (served at /ui so it's same-origin with the API) ────────────
 _dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")

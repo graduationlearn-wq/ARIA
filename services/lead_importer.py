@@ -45,14 +45,33 @@ _LEAD_TYPE_MAP = {
 
 
 def _norm_header(h: str) -> str:
-    return re.sub(r"[\s_\-.]+", "", (h or "").strip().lower())
+    """Lowercase + drop everything non-alphanumeric (handles long FB question headers)."""
+    return re.sub(r"[^a-z0-9]", "", (h or "").strip().lower())
+
+
+# Keyword rules for the Meta/Facebook Lead Ads export, whose headers are the full
+# question text (e.g. "do_you_currently_use_any_software_or_digital_platform_…").
+# Each rule: field, and a predicate over the normalised header key. Checked after
+# exact-alias matching. Order matters — first match wins.
+_KEYWORD_RULES = [
+    ("lead_type",        lambda k: "typesofbusiness" in k or "businesstype" in k),
+    ("uses_software",    lambda k: "currentlyuse" in k or "usesoftware" in k or ("software" in k and "manage" in k)),
+    ("open_to_platform", lambda k: ("opento" in k and ("adopt" in k or "platform" in k or "technology" in k))),
+    ("willing_for_demo", lambda k: "willing" in k and ("evaluate" in k or "demo" in k or "trial" in k)),
+    ("company_website",  lambda k: "website" in k or "companysite" in k),
+]
 
 
 def _header_to_field(header: str) -> str | None:
     """Map a raw column header to a canonical lead field, or None if unknown."""
     key = _norm_header(header)
+    # 1. Exact alias match (the simple, clean headers).
     for field, aliases in HEADER_ALIASES.items():
         if key == field or key in aliases:
+            return field
+    # 2. Keyword match (the long FB-export question headers).
+    for field, pred in _KEYWORD_RULES:
+        if pred(key):
             return field
     return None
 
@@ -157,7 +176,9 @@ def to_lead_fields(raw: dict) -> dict:
         elif field == "email":
             out[field] = value.lower()
         elif field == "phone":
-            out[field] = value.replace(" ", "").replace("-", "")
+            # Meta export prefixes phone with "p:" (e.g. "p:+919520771486").
+            v = re.sub(r"^[A-Za-z]:", "", value).replace(" ", "").replace("-", "")
+            out[field] = v
         else:
             out[field] = value
     return out

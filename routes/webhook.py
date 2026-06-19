@@ -138,6 +138,8 @@ def receive_lead(payload: LeadWebhookPayload, db: Session = Depends(get_db)):
         company_name=payload.company_name,
         lead_type=_parse_lead_type(payload.types_of_business),
         source_platform=payload.platform or "unknown",
+        team_size=payload.team_size,
+        company_website=payload.company_website,
         uses_software=_parse_bool(payload.do_you_currently_use_any_software),
         open_to_platform=_parse_bool(
             payload.are_you_open_to_adopting_a_new_technology_platform

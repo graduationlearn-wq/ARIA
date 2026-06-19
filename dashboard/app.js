@@ -76,6 +76,7 @@ function renderIdentity() {
   if ($('avatar-menu-name'))  $('avatar-menu-name').textContent = CURRENT_USER.name;
   if ($('avatar-menu-role'))  $('avatar-menu-role').textContent = `${roleLabel(CURRENT_USER.role)} · ${CURRENT_USER.email}`;
   if ($('menu-team'))         $('menu-team').hidden = CURRENT_USER.role !== 'admin';
+  if ($('menu-sheets'))       $('menu-sheets').hidden = CURRENT_USER.role === 'employee';  // admin + team leaders
   renderViewAs();
 }
 
@@ -288,7 +289,10 @@ function mapApiLead(l) {
     last_activity_min: l.last_interaction_at
       ? Math.max(1, Math.floor((Date.now() - new Date(l.last_interaction_at)) / 60000))
       : null,
+    phone: l.phone || '',
     uses_software: l.uses_software,
+    open_to_platform: l.open_to_platform,
+    company_website: l.company_website || '',
     team_size: l.team_size,
     willing_for_demo: l.willing_for_demo,
     current_intent: l.current_intent,
@@ -1021,6 +1025,11 @@ function renderLeadGrid() {
         </div>
         <div class="lc-name">${esc(l.name)}</div>
         <div class="lc-role">${esc(l.role)} · ${esc(l.company)}</div>
+        <div class="lc-contact">
+          ${l.phone ? `<span title="${esc(l.phone)}">${ICONS.phone}${esc(l.phone)}</span>` : ''}
+          ${l.state ? `<span>${esc(l.state)}</span>` : ''}
+          ${l.handle ? `<span class="lc-email" title="${esc(l.handle)}">${esc(l.handle)}</span>` : ''}
+        </div>
         <div class="lc-grid">
           <div class="lc-stat">
             <span class="lc-stat-lbl">From</span>
@@ -1034,6 +1043,11 @@ function renderLeadGrid() {
             <span class="lc-stat-lbl">Sector</span>
             <span class="lc-stat-val">${TYPE_LBL[l.lead_type] || l.lead_type}</span>
           </div>
+        </div>
+        <div class="lc-tags">
+          ${l.willing_for_demo === true ? '<span class="lc-tag lc-tag-demo">Wants demo</span>' : ''}
+          ${l.uses_software === false ? '<span class="lc-tag lc-tag-sw">No software yet</span>' : ''}
+          ${l.team_size ? `<span class="lc-tag">Team of ${l.team_size}</span>` : ''}
         </div>
       </div>
     `;
@@ -2159,6 +2173,7 @@ function wireTopbar() {
       if (a === 'settings') openSettings('knowledge');
       else if (a === 'kb')  window.open('/admin/kb', '_blank');
       else if (a === 'team') openTeamMgr();
+      else if (a === 'sheets') openSheetMgr();
       else if (a === 'docs') openSettings('docs');
       else if (a === 'signout') { fetch('/auth/logout', { method: 'POST' }).finally(() => location.reload()); }
     });
@@ -2408,6 +2423,8 @@ async function submitAddLead(e) {
   const btn  = $('addlead-submit');
   const err  = $('addlead-error');
   const payload = Object.fromEntries(new FormData(form).entries());
+  // Drop blank fields so optional/typed ones (e.g. team_size:int) aren't sent as "".
+  Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
 
   if (!payload.first_name?.trim() || !payload.email?.trim()) {
     err.textContent = 'Name and email are required.';
@@ -2836,6 +2853,111 @@ function wireTeamMgr() {
   $('teammgr-overlay')?.addEventListener('click', e => { if (e.target.id === 'teammgr-overlay') closeTeamMgr(); });
 }
 
+/* ══════════════════════ LEAD SOURCES — GOOGLE SHEETS (admin/leader) ══════════════════════ */
+let SHEETS = [];
+
+async function openSheetMgr() {
+  $('sheet-error').hidden = true;
+  $('sheet-name').value = '';
+  $('sheet-url').value = '';
+  // Admin can assign a sheet to any team leader; a leader's sheets are their own.
+  const ownerSel = $('sheet-owner');
+  if (CURRENT_USER && CURRENT_USER.role === 'admin') {
+    const leaders = VIEWABLE.filter(u => u.role === 'manager' || u.role === 'admin');
+    ownerSel.innerHTML = leaders.map(u => `<option value="${u.id}" ${u.id === CURRENT_USER.id ? 'selected' : ''}>${esc(u.name)} · ${roleLabel(u.role)}</option>`).join('');
+    ownerSel.hidden = leaders.length <= 1;
+  } else {
+    ownerSel.hidden = true;
+  }
+  await loadSheets();
+  $('sheetmgr-overlay').hidden = false;
+}
+function closeSheetMgr() { const o = $('sheetmgr-overlay'); if (o) o.hidden = true; }
+
+async function loadSheets() {
+  try {
+    const r = await fetch('/sheets/');
+    SHEETS = r.ok ? (await r.json()).sheets || [] : [];
+  } catch { SHEETS = []; }
+  renderSheetList();
+}
+
+function renderSheetList() {
+  const host = $('sheetmgr-list');
+  if (!host) return;
+  if (!SHEETS.length) {
+    host.innerHTML = `<div class="sheet-empty">No sheets yet. Add one above — ARIA will poll it every ~15 minutes.</div>`;
+    return;
+  }
+  host.innerHTML = SHEETS.map(s => `
+    <div class="sheet-row">
+      <div class="sheet-info">
+        <div class="sheet-name">${esc(s.name)} ${s.is_active ? '' : '<span class="sheet-off">paused</span>'}</div>
+        <div class="sheet-meta">Team: ${esc(s.owner_name || '—')} · ${s.total_imported || 0} imported total</div>
+        <div class="sheet-status ${(s.last_status || '').startsWith('error') ? 'bad' : ''}">${s.last_synced_at ? esc(s.last_status || 'synced') : 'never synced'}</div>
+      </div>
+      <div class="sheet-tools">
+        <button class="btn-ghost sm" data-sync="${s.id}">Sync now</button>
+        <button class="btn-ghost sm ghost-danger" data-del="${s.id}">Remove</button>
+      </div>
+    </div>`).join('');
+
+  $$('#sheetmgr-list [data-sync]').forEach(b => b.addEventListener('click', () => syncSheet(+b.dataset.sync, b)));
+  $$('#sheetmgr-list [data-del]').forEach(b => b.addEventListener('click', () => removeSheet(+b.dataset.del)));
+}
+
+async function addSheet() {
+  const name = $('sheet-name').value.trim();
+  const url = $('sheet-url').value.trim();
+  const err = $('sheet-error');
+  if (!name || !url) { err.textContent = 'Give the sheet a label and paste its link.'; err.hidden = false; return; }
+  const body = { name, sheet_url: url };
+  const osel = $('sheet-owner');
+  if (osel && !osel.hidden && osel.value) body.owner_user_id = +osel.value;
+  try {
+    const r = await fetch('/sheets/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Could not add the sheet');
+    $('sheet-name').value = ''; $('sheet-url').value = '';
+    toast(`Added "${d.name}" — syncing now…`);
+    await syncSheet(d.id);          // first pull immediately
+    await loadSheets();
+  } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+}
+
+async function syncSheet(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try {
+    const r = await fetch(`/sheets/${id}/sync`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Sync failed');
+    const res = d.result || {};
+    if (res.error) toast(`Sync failed: ${res.error}`, true);
+    else toast(`Synced: ${res.imported} new · ${res.duplicates} already had`);
+    await loadSheets();
+    await loadLiveData(); renderAll();   // surface new leads in the dashboard
+  } catch (ex) { toast(ex.message || 'Sync failed', true); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Sync now'; } }
+}
+
+async function removeSheet(id) {
+  if (!confirm('Remove this sheet source? Imported leads stay; ARIA just stops polling it.')) return;
+  try {
+    const r = await fetch(`/sheets/${id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error();
+    await loadSheets();
+    toast('Sheet removed');
+  } catch { toast('Could not remove the sheet', true); }
+}
+
+function wireSheetMgr() {
+  $('sheetmgr-close')?.addEventListener('click', closeSheetMgr);
+  $('sheetmgr-overlay')?.addEventListener('click', e => { if (e.target.id === 'sheetmgr-overlay') closeSheetMgr(); });
+  $('sheet-add-btn')?.addEventListener('click', addSheet);
+}
+
 function wireTemplates() {
   $('compose-close')?.addEventListener('click', closeCompose);
   $('compose-overlay')?.addEventListener('click', e => { if (e.target.id === 'compose-overlay') closeCompose(); });
@@ -2887,6 +3009,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireConvFilters();
   wireTemplates();
   wireTeamMgr();
+  wireSheetMgr();
   wireLogin();
 
   const isServed = window.location.protocol !== 'file:';
@@ -2912,12 +3035,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   const refreshBtn = $('refresh-btn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
+      // Locked while it works so nobody can spam it (each click hits Google).
+      refreshBtn.disabled = true;
       refreshBtn.style.opacity = '0.4';
       refreshBtn.style.pointerEvents = 'none';
-      await loadLiveData();
-      renderAll();
-      refreshBtn.style.opacity = '';
-      refreshBtn.style.pointerEvents = '';
+      refreshBtn.classList.add('spinning');
+      const oldTitle = refreshBtn.title;
+      refreshBtn.title = 'Checking sheets…';
+      try {
+        // Pull any new rows from the user's Google Sheets first, then reload.
+        // Employees have no sheets, so skip the round-trip for them.
+        if (CURRENT_USER && CURRENT_USER.role !== 'employee') {
+          try {
+            const r = await fetch('/sheets/sync-all', { method: 'POST' });
+            if (r.ok) {
+              const d = await r.json();
+              if (d.imported) toast(`${d.imported} new lead${d.imported === 1 ? '' : 's'} from your sheets`);
+            }
+          } catch (_) { /* sheet fetch is best-effort — still reload below */ }
+        }
+        await loadLiveData();
+        renderAll();
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.style.opacity = '';
+        refreshBtn.style.pointerEvents = '';
+        refreshBtn.classList.remove('spinning');
+        refreshBtn.title = oldTitle;
+      }
     });
   }
 
