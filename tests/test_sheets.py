@@ -53,6 +53,26 @@ class TestUrlNormalize:
         assert sheet_sync.to_csv_url(u) == u
 
 
+class TestOneDriveUrl:
+    def test_detects_onedrive_hosts(self):
+        assert sheet_sync.is_onedrive_url("https://1drv.ms/x/c/abc/IQ123?e=Z")
+        assert sheet_sync.is_onedrive_url("https://onedrive.live.com/foo")
+        assert sheet_sync.is_onedrive_url("https://contoso-my.sharepoint.com/x")
+        assert not sheet_sync.is_onedrive_url("https://docs.google.com/spreadsheets/d/ABC/edit")
+
+    def test_download_param_appended_with_existing_query(self):
+        u = "https://1drv.ms/x/c/abc/IQ123?e=YEHL2r"
+        assert sheet_sync.to_download_url(u) == u + "&download=1"
+
+    def test_download_param_appended_without_query(self):
+        u = "https://1drv.ms/x/c/abc/IQ123"
+        assert sheet_sync.to_download_url(u) == u + "?download=1"
+
+    def test_download_param_not_doubled(self):
+        u = "https://1drv.ms/x/c/abc/IQ123?download=1"
+        assert sheet_sync.to_download_url(u) == u
+
+
 # ── CRUD + permissions ────────────────────────────────────────────────────────
 
 class TestSheetCrud:
@@ -120,6 +140,31 @@ class TestSync:
         assert r2.json()["result"]["imported"] == 0
         assert r2.json()["result"]["duplicates"] == 2
         assert db.query(Lead).count() == 2
+
+    def test_sync_parses_xlsx_bytes(self, client, db):
+        # OneDrive/SharePoint sources return raw .xlsx bytes (not CSV); the sync
+        # sniffs the "PK" header and routes to the xlsx parser.
+        openpyxl = pytest.importorskip("openpyxl")
+        from io import BytesIO
+
+        _, leader, e1, e2 = make_org(db)
+        as_user(leader)
+        sid = client.post("/sheets/", json={"name": "OneDrive", "sheet_url": "https://1drv.ms/x/c/abc/IQ1?e=Z"}).json()["id"]
+
+        wb = openpyxl.Workbook(); ws = wb.active
+        ws.append(["Name", "Email", "Phone", "Type", "Wants Demo"])
+        ws.append(["Mustafa Turm", "asadmustafa486@gmail.com", "+919520771486", "posp_advisor", "yes"])
+        buf = BytesIO(); wb.save(buf)
+        assert buf.getvalue()[:2] == b"PK"  # what the OneDrive download returns
+
+        with patch("services.sheet_sync.fetch_csv", return_value=buf.getvalue()):
+            r = client.post(f"/sheets/{sid}/sync")
+        assert r.status_code == 200
+        assert r.json()["result"]["imported"] == 1
+        lead = db.query(Lead).filter(Lead.email == "asadmustafa486@gmail.com").first()
+        assert lead is not None
+        assert lead.owner_id in {e1.id, e2.id}
+        assert lead.willing_for_demo is True
 
     def test_private_sheet_records_error_not_crash(self, client, db):
         _, leader, _, _ = make_org(db)

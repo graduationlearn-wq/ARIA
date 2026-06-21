@@ -1,11 +1,12 @@
 """
-Google Sheet sync — fetch a published sheet as CSV, parse it, and create +
-auto-assign any new leads. Runs on a timer (every ~15 min) and on demand.
+Sheet sync — fetch a published sheet, parse it, and create + auto-assign any
+new leads. Runs on a timer (every ~15 min) and on demand.
 
-Access model: the sheet must be readable without auth — either shared as
-"anyone with the link can view" or published to the web. ARIA fetches its CSV
-export URL. No Google API credentials, service account, or OAuth required, so
-there is nothing extra to provision at deploy time.
+Supported sources (all read without auth — nothing to provision at deploy time):
+  - Google Sheets — fetched via its CSV export URL.
+  - OneDrive / SharePoint — fetched via the share link with `download=1`, which
+    returns the raw .xlsx.
+The link must be shared as "anyone with the link can view" or published to web.
 """
 
 import re
@@ -19,6 +20,7 @@ from services import lead_importer, lead_intake
 
 _DOC_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9\-_]+)")
 _GID_RE = re.compile(r"[?&#]gid=([0-9]+)")
+_ONEDRIVE_HOSTS = ("1drv.ms", "onedrive.live.com", "sharepoint.com")
 _FETCH_TIMEOUT = 20  # seconds
 
 
@@ -37,16 +39,43 @@ def to_csv_url(url: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{doc_id}/export?format=csv&gid={gid}"
 
 
+def is_onedrive_url(url: str) -> bool:
+    """True for OneDrive / SharePoint share links (personal or business)."""
+    return any(h in (url or "").lower() for h in _ONEDRIVE_HOSTS)
+
+
+def to_download_url(url: str) -> str:
+    """
+    OneDrive / SharePoint share links return the raw file when `download=1` is
+    set; a plain fetch returns the HTML viewer page instead.
+    """
+    url = (url or "").strip()
+    if "download=1" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}download=1"
+
+
+def _fetch_url(url: str) -> str:
+    """Resolve a share link to the URL that yields machine-readable bytes."""
+    url = (url or "").strip()
+    return to_download_url(url) if is_onedrive_url(url) else to_csv_url(url)
+
+
 def fetch_csv(url: str) -> bytes:
-    """Fetch the sheet's CSV bytes. Raises ValueError with a friendly message on failure."""
-    target = to_csv_url(url)
+    """
+    Fetch the sheet's raw bytes — Google CSV export or a OneDrive/SharePoint xlsx
+    download. The caller sniffs the bytes to pick the CSV vs xlsx parser.
+    Raises ValueError with a friendly message on failure.
+    """
+    target = _fetch_url(url)
     try:
         resp = requests.get(target, timeout=_FETCH_TIMEOUT, allow_redirects=True)
     except requests.RequestException as e:
         raise ValueError(f"Could not reach the sheet: {e}")
     if resp.status_code != 200:
         raise ValueError(f"Sheet returned HTTP {resp.status_code}")
-    # Google serves an HTML login/permission page when a sheet isn't public.
+    # Google/OneDrive serve an HTML login/permission page when not public.
     if "text/html" in resp.headers.get("content-type", "").lower():
         raise ValueError(
             "Sheet isn't publicly readable — share it as 'anyone with the link can view' "
@@ -66,7 +95,9 @@ def sync_source(db, source: SheetSource) -> dict:
     owner = db.query(User).filter(User.id == source.owner_user_id).first()
     try:
         data = fetch_csv(source.sheet_url)
-        rows = lead_importer.parse_rows("sheet.csv", data)
+        # xlsx files are ZIP archives ("PK..") — anything else is treated as CSV.
+        fname = "sheet.xlsx" if data[:2] == b"PK" else "sheet.csv"
+        rows = lead_importer.parse_rows(fname, data)
         summary = lead_intake.intake_rows(db, rows, owner, source="sheet")
         source.last_imported = summary["imported"]
         source.total_imported = (source.total_imported or 0) + summary["imported"]
