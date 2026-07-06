@@ -28,6 +28,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="employee")  # employee | manager | admin
     manager_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     avatar_seed: Mapped[str] = mapped_column(String(120), nullable=True)
+    # Filename of the user's uploaded email-signature image (in signature_files/).
+    # Null = they haven't uploaded one yet (compose shows a non-blocking warning).
+    signature_image: Mapped[str] = mapped_column(String(300), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

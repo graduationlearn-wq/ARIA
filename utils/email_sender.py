@@ -58,40 +58,60 @@ def _links_to_html(body: str) -> str:
 
 
 def send_email(to_address: str, subject: str, body: str,
-               attachments: list[str] | None = None) -> bool:
+               attachments: list[str] | None = None,
+               from_email: str | None = None,
+               from_name: str | None = None,
+               reply_to: str | None = None,
+               signature_html: str | None = None) -> bool:
     """
     Send a plain-text + HTML email, optionally with file attachments
     (list of paths on disk). Returns True on success, False on failure.
+
+    from_email / from_name make the message appear to come from the logged-in
+    team member (so leads see who's actually writing). reply_to routes replies
+    back to that person. The SMTP envelope sender stays the authenticated account
+    (SPF/auth stay valid) — only the visible From/Reply-To change.
     """
     if not settings.smtp_user or not settings.smtp_password:
         print("[Email] SMTP credentials not configured — skipping send.")
         print(f"[Email] Would have sent to: {to_address}")
+        print(f"[Email] From: {from_email or settings.email_from_address or settings.smtp_user}")
         print(f"[Email] Subject: {subject}")
         if attachments:
             print(f"[Email] Attachments: {[os.path.basename(p) for p in attachments]}")
         print(f"[Email] Body:\n{body}")
         return False
 
-    # Use explicit from address if set (required for SendGrid), else fall back to smtp_user
-    from_address = settings.email_from_address or settings.smtp_user
+    # Authenticated account — used as the SMTP envelope sender (required for
+    # SendGrid where smtp_user="apikey" but the verified sender differs).
+    auth_from = settings.email_from_address or settings.smtp_user
+    # Visible sender: the logged-in team member if given, else the configured account.
+    visible_from = (from_email or "").strip() or auth_from
+    display_name = (from_name or "").strip() or settings.email_from_name
+    reply_addr = (reply_to or from_email or "").strip()
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"{settings.email_from_name} <{from_address}>"
+    msg["From"] = f"{display_name} <{visible_from}>"
     msg["To"] = to_address
+    if reply_addr:
+        msg["Reply-To"] = reply_addr
 
     # Plain text version — markdown links become "text: url" so they stay usable
     msg.attach(MIMEText(_links_to_plain(body), "plain"))
 
     # HTML version — markdown links become hidden hyperlinks (raw URL not shown)
     html_body = _links_to_html(body)
+    # The sender's uploaded signature image is appended as raw HTML (not escaped).
+    sig_block = f"<br><br>{signature_html}" if signature_html else ""
     html = f"""
     <html><body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #2c3e50;">
         {html_body}
+        {sig_block}
         <br><br>
         <p style="font-size:11px;color:#aaa;">
             You're receiving this because you filled out a form expressing interest in BeyondSure.<br>
-            <a href="mailto:{from_address}?subject=Unsubscribe">Unsubscribe</a>
+            <a href="mailto:{reply_addr or visible_from}?subject=Unsubscribe">Unsubscribe</a>
         </p>
     </body></html>
     """
@@ -100,9 +120,10 @@ def send_email(to_address: str, subject: str, body: str,
     # With attachments: wrap text/html alternative inside a mixed container.
     if attachments:
         outer = MIMEMultipart("mixed")
-        for header in ("Subject", "From", "To"):
-            outer[header] = msg[header]
-            del msg[header]
+        for header in ("Subject", "From", "To", "Reply-To"):
+            if header in msg:
+                outer[header] = msg[header]
+                del msg[header]
         outer.attach(msg)
         for path in attachments:
             try:
@@ -121,9 +142,9 @@ def send_email(to_address: str, subject: str, body: str,
             server.ehlo()
             server.starttls()
             server.login(settings.smtp_user, settings.smtp_password)
-            # Use from_address (not smtp_user) as envelope sender — critical for SendGrid
-            # where smtp_user="apikey" but the verified sender is email_from_address.
-            server.sendmail(from_address, to_address, msg.as_string())
+            # Envelope sender stays the authenticated account (not the visible From) —
+            # critical for SendGrid (smtp_user="apikey") and keeps SPF/auth aligned.
+            server.sendmail(auth_from, to_address, msg.as_string())
         print(f"[Email] Sent to {to_address} — Subject: {subject}")
         return True
     except Exception as e:

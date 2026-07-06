@@ -1786,6 +1786,26 @@ a.attach-chip:hover { background: #ede9fe; }
 .attach-x { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; color: inherit; padding: 0 0 0 2px; opacity: .65; }
 .attach-x:hover { opacity: 1; }
 
+/* selectable attachments in the compose modal */
+.compose-attach-wrap { margin-top: 2px; }
+.compose-attach-title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-4); margin-bottom: 6px; }
+.attach-check {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--pri-50); border: 1px solid #ddd6fe; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; color: #4c1d95; padding: 6px 10px; cursor: pointer;
+}
+.attach-check input { accent-color: var(--pri-500); cursor: pointer; }
+.attach-check.attach-missing { background: #fef2f2; border-color: #fecaca; color: #b91c1c; cursor: default; }
+.attach-check .attach-view { margin-left: 2px; font-size: 11.5px; font-weight: 700; color: var(--pri-500); text-decoration: none; }
+.attach-check .attach-view:hover { text-decoration: underline; }
+.compose-sig-note { font-size: 12px; color: var(--ink-4); margin-top: 8px; }
+.compose-sig-note.sig-warn { color: #b45309; font-weight: 600; }
+
+/* My-signature upload modal */
+.sig-preview { margin-bottom: 12px; }
+.sig-preview img { max-width: 100%; max-height: 200px; border: 1px solid var(--line, #e5e7eb); border-radius: 8px; padding: 10px; background: #fff; display: block; }
+.sig-empty { font-size: 13px; color: var(--ink-4); background: #f8f8fb; border: 1px dashed var(--line, #e5e7eb); border-radius: 8px; padding: 14px; text-align: center; }
+
 /* template manager */
 .tplmgr-body { display: grid; grid-template-columns: 220px 1fr; gap: 18px; margin-top: 14px; }
 .tplmgr-list { display: flex; flex-direction: column; gap: 6px; align-content: start; }

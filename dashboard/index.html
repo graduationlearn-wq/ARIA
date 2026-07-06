@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=17">
+<link rel="stylesheet" href="styles.css?v=19">
 </head>
 <body>
 
@@ -102,6 +102,7 @@
             </div>
           </div>
           <button class="menu-item" data-action="settings">⚙ Settings</button>
+          <button class="menu-item" data-action="signature">✒ My email signature</button>
           <button class="menu-item" data-action="team" id="menu-team" hidden>👥 Team &amp; roles</button>
           <button class="menu-item" data-action="sheets" id="menu-sheets" hidden>🔗 Lead sources (Sheets)</button>
           <button class="menu-item" data-action="kb">📚 Knowledge Base</button>
@@ -244,13 +245,42 @@
         </div>
         <label class="compose-field">Subject<input type="text" id="compose-subject"></label>
         <label class="compose-field">Message<textarea id="compose-text" rows="12" spellcheck="false"></textarea></label>
-        <div class="compose-attach" id="compose-attach"></div>
+        <div class="compose-attach-wrap">
+          <div class="compose-attach-title" id="compose-attach-title">Attachments</div>
+          <div class="compose-attach" id="compose-attach"></div>
+        </div>
+        <div class="compose-sig-note" id="compose-sig-note"><span id="compose-sig-msg">Your signature is added to the bottom.</span> <button type="button" class="ghost-link" id="compose-edit-sig">My signature</button></div>
         <div class="modal-error" id="compose-error" hidden></div>
         <div class="compose-foot">
           <button type="button" class="ghost-link" id="compose-manage">Manage templates</button>
           <button type="button" class="primary-btn" id="compose-send">Send email</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━ MY SIGNATURE MODAL ━━━━━━━━━━━━━ -->
+  <div class="modal-overlay" id="sig-overlay" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2>My email signature</h2>
+        <button class="modal-close" id="sig-close" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="modal-sub">Upload your signature as an image. It's added to the bottom of every email you send from a template — so leads see your name, title and contact details.</p>
+      <div class="sig-preview" id="sig-preview"></div>
+      <label class="import-drop" id="sig-drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span class="import-drop-main" id="sig-filename">Choose a signature image</span>
+        <span class="import-drop-sub">PNG, JPG, GIF or WebP · max 2 MB</span>
+        <input type="file" id="sig-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+      </label>
+      <div class="modal-foot">
+        <button type="button" class="btn-ghost" id="sig-remove" hidden>Remove signature</button>
+        <button type="button" class="btn-ghost" id="sig-cancel">Close</button>
+      </div>
+      <div class="modal-error" id="sig-error" hidden></div>
     </div>
   </div>
 
@@ -817,7 +847,7 @@
   </main>
 </div>
 
-<script src="data.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="data.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

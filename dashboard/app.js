@@ -2171,6 +2171,7 @@ function wireTopbar() {
       const a = mi.dataset.action;
       closeAllPopovers();
       if (a === 'settings') openSettings('knowledge');
+      else if (a === 'signature') openSignatureEditor();
       else if (a === 'kb')  window.open('/admin/kb', '_blank');
       else if (a === 'team') openTeamMgr();
       else if (a === 'sheets') openSheetMgr();
@@ -2592,6 +2593,7 @@ async function loadComposePreview(tplId) {
     $('compose-subject').value = d.subject;
     $('compose-text').value = d.body;
     renderComposeAttachments(tplId, d.attachments || []);
+    updateComposeSigNote(d.signature_set);
     if (d.unknown_tokens && d.unknown_tokens.length) {
       err.textContent = `Heads up — unknown placeholder(s) left in the text: ${d.unknown_tokens.map(t => `{${t}}`).join(', ')}`;
       err.hidden = false;
@@ -2603,14 +2605,23 @@ async function loadComposePreview(tplId) {
 }
 
 function renderComposeAttachments(tplId, files) {
-  $('compose-attach').innerHTML = files.length
-    ? files.map(a => `
-        <a class="attach-chip ${a.exists ? '' : 'attach-missing'}"
-           href="/templates/${tplId}/attachments/${encodeURIComponent(a.file)}" target="_blank" rel="noopener"
-           title="${a.exists ? 'Click to view' : 'File missing on server — upload it in Manage templates'}">
-          📎 ${esc(a.display)}${a.exists ? '' : ' (missing)'}
-        </a>`).join('')
-    : `<span class="attach-none">No attachments on this template.</span>`;
+  const wrap = $('compose-attach');
+  const title = $('compose-attach-title');
+  if (!files.length) {
+    if (title) title.hidden = true;
+    wrap.innerHTML = `<span class="attach-none">No attachments on this template.</span>`;
+    return;
+  }
+  if (title) title.hidden = false;
+  // Checkboxes: the sender picks which attachments to include (existing files are
+  // pre-selected; a missing file can't be sent, so it's disabled).
+  wrap.innerHTML = files.map(a => `
+    <label class="attach-check ${a.exists ? '' : 'attach-missing'}"
+           title="${a.exists ? 'Included — untick to leave out' : 'File missing on server — upload it in Manage templates'}">
+      <input type="checkbox" class="compose-attach-cb" value="${esc(a.file)}" ${a.exists ? 'checked' : 'disabled'}>
+      <span class="attach-name">📎 ${esc(a.display)}${a.exists ? '' : ' (missing)'}</span>
+      ${a.exists ? `<a class="attach-view" href="/templates/${tplId}/attachments/${encodeURIComponent(a.file)}" target="_blank" rel="noopener" title="View file">view</a>` : ''}
+    </label>`).join('');
 }
 
 async function sendCompose() {
@@ -2623,12 +2634,16 @@ async function sendCompose() {
   btn.textContent = 'Sending…';
   err.hidden = true;
   try {
+    const attachments = Array.from(
+      document.querySelectorAll('#compose-attach .compose-attach-cb:checked')
+    ).map(cb => cb.value);
     const r = await fetch(`/templates/${tplId}/send`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         lead_id: composeLead.id,
         subject: $('compose-subject').value,
         body: $('compose-text').value,
+        attachments,
       }),
     });
     const d = await r.json();
@@ -2645,6 +2660,63 @@ async function sendCompose() {
   } finally {
     btn.disabled = false;
     btn.textContent = orig;
+  }
+}
+
+/* ── My signature (uploaded image) ── */
+async function openSignatureEditor() {
+  const err = $('sig-error'); if (err) err.hidden = true;
+  await refreshSignaturePreview();
+  $('sig-overlay').hidden = false;
+}
+function closeSignatureEditor() { const o = $('sig-overlay'); if (o) o.hidden = true; }
+
+async function refreshSignaturePreview() {
+  let url = null;
+  try { url = (await (await fetch('/auth/me')).json()).signature_url; } catch (_) { /* offline */ }
+  const box = $('sig-preview'); const rm = $('sig-remove');
+  if (!box) return;
+  if (url) {
+    box.innerHTML = `<img src="${url}?t=${Date.now()}" alt="Your email signature">`;
+    if (rm) rm.hidden = false;
+  } else {
+    box.innerHTML = `<div class="sig-empty">No signature uploaded yet.</div>`;
+    if (rm) rm.hidden = true;
+  }
+}
+
+async function uploadSignature(file) {
+  const err = $('sig-error'); if (err) err.hidden = true;
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const r = await fetch('/signatures/me', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Upload failed');
+    toast('Signature uploaded');
+    await refreshSignaturePreview();
+  } catch (ex) {
+    if (err) { err.textContent = ex.message || 'Could not upload the image.'; err.hidden = false; }
+  }
+}
+
+async function removeSignature() {
+  const err = $('sig-error'); if (err) err.hidden = true;
+  try {
+    const r = await fetch('/signatures/me', { method: 'DELETE' });
+    if (!r.ok) throw new Error();
+    toast('Signature removed');
+    await refreshSignaturePreview();
+  } catch { if (err) { err.textContent = 'Could not remove the signature.'; err.hidden = false; } }
+}
+
+function updateComposeSigNote(isSet) {
+  const wrap = $('compose-sig-note'); const msg = $('compose-sig-msg');
+  if (!wrap || !msg) return;
+  if (isSet) {
+    wrap.classList.remove('sig-warn');
+    msg.textContent = '✒ Your signature will be added to the bottom of this email.';
+  } else {
+    wrap.classList.add('sig-warn');
+    msg.textContent = '⚠ You haven’t uploaded an email signature — it won’t be included. You can still send.';
   }
 }
 
@@ -2964,9 +3036,20 @@ function wireTemplates() {
   $('compose-send')?.addEventListener('click', sendCompose);
   $('compose-manage')?.addEventListener('click', () => { closeCompose(); openTplMgr(); });
   $('compose-tpl')?.addEventListener('change', e => loadComposePreview(+e.target.value));
+  $('compose-edit-sig')?.addEventListener('click', openSignatureEditor);
 
   $('tplmgr-close')?.addEventListener('click', closeTplMgr);
   $('tplmgr-overlay')?.addEventListener('click', e => { if (e.target.id === 'tplmgr-overlay') closeTplMgr(); });
+
+  $('sig-close')?.addEventListener('click', closeSignatureEditor);
+  $('sig-cancel')?.addEventListener('click', closeSignatureEditor);
+  $('sig-overlay')?.addEventListener('click', e => { if (e.target.id === 'sig-overlay') closeSignatureEditor(); });
+  $('sig-remove')?.addEventListener('click', removeSignature);
+  $('sig-file')?.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) uploadSignature(f);
+    e.target.value = '';   // allow re-selecting the same file
+  });
 }
 
 /* ══════════════════════ RE-RENDER ALL ══════════════════════ */

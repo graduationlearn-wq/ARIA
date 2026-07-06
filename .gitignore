@@ -49,4 +49,8 @@ htmlcov/
 template_files/*
 !template_files/.gitkeep
 
+# Uploaded per-user email-signature images (personal — repo is public).
+signature_files/*
+!signature_files/.gitkeep
+
 .claude/

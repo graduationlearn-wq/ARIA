@@ -8,9 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
+from main import app
 from models.email_template import EmailTemplate
 from models.interaction import Interaction
 from models.lead import Lead
+from models.user import User
+from routes.auth import get_current_user
 from services.template_service import (
     DEFAULT_TEMPLATES, render_template, seed_templates,
 )
@@ -70,6 +73,123 @@ class TestRendering:
         seed_templates(db)
 
         assert db.query(EmailTemplate).count() == len(DEFAULT_TEMPLATES)
+
+    def test_seed_adds_the_client_templates(self, db):
+        seed_templates(db)
+        names = {t.name for t in db.query(EmailTemplate).all()}
+        assert "Commercial Proposal" in names
+        assert "Post-Demo — Thank You & Next Steps" in names
+
+    def test_seed_by_name_fills_gaps_without_duplicating(self, db):
+        # One default already present → seeding adds the rest, not a duplicate.
+        db.add(EmailTemplate(name="Commercial Proposal", stage="negotiation",
+                             subject="x", body="y", attachments="[]"))
+        db.commit()
+        seed_templates(db)
+        assert db.query(EmailTemplate).filter(EmailTemplate.name == "Commercial Proposal").count() == 1
+        assert db.query(EmailTemplate).count() == len(DEFAULT_TEMPLATES)
+
+
+# ── Signature (uploaded image, appended on send) ──────────────────────────────
+
+class TestSignatureOnSend:
+    def test_send_appends_signature_when_set(self, client, db):
+        user = User(name="Rep One", email="rep@beyondsure.in", role="employee",
+                    password_hash="x", signature_image="u5.png")
+        db.add(user); db.commit(); db.refresh(user)
+        app.dependency_overrides[get_current_user] = lambda: user
+        lead = make_lead(db, owner_id=user.id)   # employee scope → must own the lead
+        tpl = make_template(client)
+
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
+        _, kwargs = mock_send.call_args
+        assert kwargs["signature_html"] is not None
+        assert "<img" in kwargs["signature_html"]
+        assert "u5.png" in kwargs["signature_html"]
+
+    def test_send_omits_signature_when_unset(self, client, db):
+        # conftest admin has no signature_image.
+        lead = make_lead(db)
+        tpl = make_template(client)
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
+        _, kwargs = mock_send.call_args
+        assert kwargs["signature_html"] is None
+
+    def test_preview_reports_signature_status(self, client, db):
+        lead = make_lead(db)
+        tpl = make_template(client)
+        d = client.get(f"/templates/{tpl['id']}/preview?lead_id={lead.id}").json()
+        assert d["signature_set"] is False       # admin hasn't uploaded one
+        assert d["signature_url"] is None
+
+    def test_legacy_signature_token_renders_empty(self, db):
+        # Any old body still containing {signature} resolves to nothing now.
+        lead = make_lead(db)
+        text, unknown = render_template("Best Regards,\n{signature}", lead)
+        assert text == "Best Regards,\n"
+        assert unknown == []
+
+
+# ── Sender identity + attachment selection on send ────────────────────────────
+
+class TestSenderIdentity:
+    def test_send_carries_login_as_from_and_reply_to(self, client, db):
+        lead = make_lead(db)
+        tpl = make_template(client)
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
+        _, kwargs = mock_send.call_args
+        assert kwargs["from_email"] == "admin@test"   # the logged-in user (conftest admin)
+        assert kwargs["from_name"] == "Test Admin"
+        assert kwargs["reply_to"] == "admin@test"
+
+
+class TestAttachmentSelection:
+    def _upload(self, client, tpl_id, filename):
+        r = client.post(f"/templates/{tpl_id}/attachments",
+                        files={"file": (filename, BytesIO(b"%PDF-1.4"), "application/pdf")})
+        assert r.status_code == 200, r.text
+        return r.json()["attachments"]
+
+    def test_send_only_the_selected_attachment(self, client, db, tmp_path, monkeypatch):
+        monkeypatch.setattr("routes.templates.TEMPLATE_FILES_DIR", str(tmp_path))
+        lead = make_lead(db)
+        tpl = make_template(client)
+        self._upload(client, tpl["id"], "Profile.pdf")
+        info = self._upload(client, tpl["id"], "Proposal.pdf")
+        proposal = next(a["file"] for a in info if a["display"] == "Proposal.pdf")
+
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            r = client.post(f"/templates/{tpl['id']}/send",
+                            json={"lead_id": lead.id, "attachments": [proposal]})
+        assert r.status_code == 200
+        _, kwargs = mock_send.call_args
+        assert len(kwargs["attachments"]) == 1
+        assert "Proposal.pdf" in kwargs["attachments"][0]
+
+    def test_empty_selection_sends_no_files(self, client, db, tmp_path, monkeypatch):
+        monkeypatch.setattr("routes.templates.TEMPLATE_FILES_DIR", str(tmp_path))
+        lead = make_lead(db)
+        tpl = make_template(client)
+        self._upload(client, tpl["id"], "Profile.pdf")
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            client.post(f"/templates/{tpl['id']}/send",
+                        json={"lead_id": lead.id, "attachments": []})
+        _, kwargs = mock_send.call_args
+        assert kwargs["attachments"] == []
+
+    def test_omitting_selection_sends_all(self, client, db, tmp_path, monkeypatch):
+        monkeypatch.setattr("routes.templates.TEMPLATE_FILES_DIR", str(tmp_path))
+        lead = make_lead(db)
+        tpl = make_template(client)
+        self._upload(client, tpl["id"], "Profile.pdf")
+        self._upload(client, tpl["id"], "Proposal.pdf")
+        with patch("routes.templates.send_email", return_value=True) as mock_send:
+            client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
+        _, kwargs = mock_send.call_args
+        assert len(kwargs["attachments"]) == 2
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────

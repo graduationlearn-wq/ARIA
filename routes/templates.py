@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from models.email_template import EmailTemplate
 from models.interaction import Interaction
@@ -37,7 +38,7 @@ from routes.auth import get_current_user
 from services.auth_service import subtree_ids
 from services.stages import STAGE_LABELS, lead_stage
 from services.template_service import (
-    PLACEHOLDERS, attachment_list, render_template,
+    PLACEHOLDERS, attachment_list, render_template, signature_image_html,
 )
 from utils.email_sender import send_email
 
@@ -129,6 +130,9 @@ class SendRequest(BaseModel):
     lead_id: int
     subject: str | None = None   # edited override; falls back to rendered template
     body: str | None = None
+    # Which of the template's attachments to actually send (stored file names).
+    # None = send them all (back-compat); [] = send none.
+    attachments: list[str] | None = None
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -211,6 +215,9 @@ def preview_template(
         "attachments": _attachment_info(tpl),
         "unknown_tokens": sorted(set(unknown_s + unknown_b)),
         "lead_stage": lead_stage(lead),
+        # Drives the compose warning + preview of the sender's uploaded signature.
+        "signature_set": bool(current.signature_image),
+        "signature_url": f"/signatures/{current.signature_image}" if current.signature_image else None,
     }
 
 
@@ -236,13 +243,26 @@ def send_template(
     subject = (req.subject or "").strip() or render_template(tpl.subject, lead, current)[0]
     body = req.body if (req.body or "").strip() else render_template(tpl.body, lead, current)[0]
 
+    # Only the template's own attachments may be sent (whitelist blocks traversal);
+    # if the sender chose a subset, honour it — otherwise send them all.
+    chosen = attachment_list(tpl)
+    if req.attachments is not None:
+        wanted = set(req.attachments)
+        chosen = [name for name in chosen if name in wanted]
     paths = [
         os.path.join(TEMPLATE_FILES_DIR, name)
-        for name in attachment_list(tpl)
+        for name in chosen
         if os.path.isfile(os.path.join(TEMPLATE_FILES_DIR, name))
     ]
 
-    sent = send_email(lead.email, subject, body, attachments=paths)
+    # From/Reply-To carry the logged-in team member's identity so the lead sees
+    # (and replies to) the person actually emailing them; their uploaded signature
+    # image (if any) is appended to the bottom of the email.
+    sent = send_email(
+        lead.email, subject, body, attachments=paths,
+        from_email=current.email, from_name=current.name, reply_to=current.email,
+        signature_html=signature_image_html(current, settings.base_url),
+    )
 
     interaction = Interaction(
         lead_id=lead.id,

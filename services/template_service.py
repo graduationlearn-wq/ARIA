@@ -37,6 +37,20 @@ PLACEHOLDERS = {
 }
 
 
+def signature_image_html(sender: User | None, base_url: str) -> str | None:
+    """
+    The <img> block for the sender's uploaded signature image, or None if they
+    haven't uploaded one. Uses an absolute URL so it renders in the recipient's
+    mail client. The image is served publicly by routes/signatures.py.
+    """
+    fn = getattr(sender, "signature_image", None) if sender else None
+    if not fn:
+        return None
+    src = f"{(base_url or '').rstrip('/')}/signatures/{fn}"
+    return (f'<img src="{src}" alt="Email signature" '
+            f'style="max-width:540px;height:auto;border:0;display:block;">')
+
+
 def _token_values(lead: Lead, sender: User | None) -> dict[str, str]:
     chat_link = (
         f"{settings.base_url.rstrip('/')}/chat/{lead.chat_token}"
@@ -54,6 +68,9 @@ def _token_values(lead: Lead, sender: User | None) -> dict[str, str]:
         "demo_preference": lead.demo_preference or "",
         "sender_name":     (sender.name if sender else "") or "The BeyondSure Team",
         "sender_email":    (sender.email if sender else "") or "",
+        # The signature is now an uploaded image appended at send time, so the old
+        # {signature} text token just resolves to nothing (kept for legacy bodies).
+        "signature":       "",
         "today":           datetime.now().strftime("%d %b %Y"),
     }
 
@@ -87,9 +104,48 @@ def attachment_list(tpl: EmailTemplate) -> list[str]:
 
 # ── Default templates (one per key pipeline stage) ────────────────────────────
 
-_SIGNATURE = "Regards,\n{sender_name}\nBeyondSure"
+# Templates end with a sign-off; the sender's uploaded signature image is
+# appended automatically at send time (see routes/templates.py send_template).
+_SIGNATURE = "Best Regards,"
 
 DEFAULT_TEMPLATES = [
+    {
+        "name": "Post-Demo — Thank You & Next Steps",
+        "stage": "post_demo",
+        "subject": "Thank you for attending the BeyondSure demo",
+        "body": (
+            "Hi {lead_name},\n\n"
+            "Thank you for taking the time to attend the BeyondSure product demonstration. "
+            "It was a pleasure interacting with you and understanding your business requirements.\n\n"
+            "As discussed, the next steps are:\n"
+            "- Commercial proposal: {proposal_status}\n"
+            "- Next steps: {next_steps}\n"
+            "- Integration discussion: {integration_details}\n"
+            "- Tentative implementation timeline: {implementation_timeline}\n\n"
+            "Please let us know if you have any additional questions or require any further "
+            "information. We'd be happy to arrange another discussion if needed.\n\n"
+            "We look forward to working with you and taking the next steps together.\n\n" + _SIGNATURE
+        ),
+        # {proposal_status}/{next_steps}/… are filled in by the sender before sending
+        # (they surface as "unknown tokens" in the compose box as a fill-in checklist).
+        "attachments": [],
+    },
+    {
+        "name": "Commercial Proposal",
+        "stage": "negotiation",
+        "subject": "BeyondSure commercial proposal for {company_name}",
+        "body": (
+            "Hi {lead_name},\n\n"
+            "Thank you for your time and the opportunity to understand your requirements.\n\n"
+            "Please find the commercial proposal attached for your review. The proposal "
+            "includes the pricing and scope discussed during our conversations.\n\n"
+            "Kindly review the proposal and let us know if you have any questions or require "
+            "any clarification. We would be happy to discuss it further and address any "
+            "feedback you may have.\n\n"
+            "We look forward to your response and hope to move ahead with the next steps.\n\n" + _SIGNATURE
+        ),
+        "attachments": ["Lending_Insurance_Proposal.pdf"],
+    },
     {
         "name": "Proposal + Company Profile",
         "stage": "interested",
@@ -179,14 +235,22 @@ DEFAULT_TEMPLATES = [
 
 
 def seed_templates(db: Session) -> None:
-    """Create the default stage templates if none exist. Idempotent."""
-    if db.query(EmailTemplate).count() > 0:
-        return
+    """
+    Add any default templates that aren't present yet, matched by name. Idempotent:
+    won't duplicate, and won't resurrect a template the team deleted (delete is a
+    soft is_active flip, so the row still exists by name and is skipped here).
+    """
+    existing = {name for (name,) in db.query(EmailTemplate.name).all()}
+    added = 0
     for t in DEFAULT_TEMPLATES:
+        if t["name"] in existing:
+            continue
         db.add(EmailTemplate(
             name=t["name"], stage=t["stage"],
             subject=t["subject"], body=t["body"],
             attachments=json.dumps(t["attachments"]),
         ))
-    db.commit()
-    print(f"[Templates] Seeded {len(DEFAULT_TEMPLATES)} default email templates.")
+        added += 1
+    if added:
+        db.commit()
+        print(f"[Templates] Seeded {added} email template(s).")

@@ -59,3 +59,12 @@ def _run_light_migrations():
     if "sender_user_id" not in interaction_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE interactions ADD COLUMN sender_user_id INTEGER"))
+
+    try:
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+    except Exception:
+        return
+
+    if "signature_image" not in user_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN signature_image VARCHAR(300)"))

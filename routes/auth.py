@@ -174,9 +174,12 @@ def logout(request: Request):
 @router.get("/me")
 def me(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Current user + the people they can drill into (for the 'viewing as' selector)."""
+    fn = current.signature_image
     return {
         "user": public_user(current),
         "viewable": [public_user(u) for u in viewable_users(current, db)],
+        "signature_image": fn or None,                       # uploaded signature filename
+        "signature_url": f"/signatures/{fn}" if fn else None,  # to preview it
     }
 
 

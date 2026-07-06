@@ -20,7 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import settings, DEV_SESSION_SECRET
 from database import init_db, SessionLocal
-from routes import webhook, leads, approval, chat, admin, auth, templates, sheets
+from routes import webhook, leads, approval, chat, admin, auth, templates, sheets, signatures
 from routes import scheduler as scheduler_route
 from routes.scheduler import set_scheduler
 from services.scheduler import run_all_followups
@@ -130,6 +130,7 @@ app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(templates.router)
 app.include_router(sheets.router)
+app.include_router(signatures.router)
 
 # ── Dashboard SPA (served at /ui so it's same-origin with the API) ────────────
 _dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
