@@ -53,4 +53,7 @@ template_files/*
 signature_files/*
 !signature_files/.gitkeep
 
+# Obsidian editor state in the docs vault (personal layout — keep the .md docs).
+ARIA remembers/.obsidian/
+
 .claude/
