@@ -28,17 +28,17 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from config import settings
 from database import get_db
 from models.email_template import EmailTemplate
 from models.interaction import Interaction
 from models.lead import Lead
 from models.user import User
 from routes.auth import get_current_user
+from routes.signatures import SIGNATURE_FILES_DIR
 from services.auth_service import subtree_ids
 from services.stages import STAGE_LABELS, lead_stage
 from services.template_service import (
-    PLACEHOLDERS, attachment_list, render_template, signature_image_html,
+    PLACEHOLDERS, attachment_list, render_template,
 )
 from utils.email_sender import send_email
 
@@ -257,11 +257,15 @@ def send_template(
 
     # From/Reply-To carry the logged-in team member's identity so the lead sees
     # (and replies to) the person actually emailing them; their uploaded signature
-    # image (if any) is appended to the bottom of the email.
+    # image (if any) is embedded inline at the bottom of the email.
+    sig_path = (
+        os.path.join(SIGNATURE_FILES_DIR, current.signature_image)
+        if current.signature_image else None
+    )
     sent = send_email(
         lead.email, subject, body, attachments=paths,
         from_email=current.email, from_name=current.name, reply_to=current.email,
-        signature_html=signature_image_html(current, settings.base_url),
+        signature_image_path=sig_path,
     )
 
     interaction = Interaction(

@@ -37,18 +37,8 @@ PLACEHOLDERS = {
 }
 
 
-def signature_image_html(sender: User | None, base_url: str) -> str | None:
-    """
-    The <img> block for the sender's uploaded signature image, or None if they
-    haven't uploaded one. Uses an absolute URL so it renders in the recipient's
-    mail client. The image is served publicly by routes/signatures.py.
-    """
-    fn = getattr(sender, "signature_image", None) if sender else None
-    if not fn:
-        return None
-    src = f"{(base_url or '').rstrip('/')}/signatures/{fn}"
-    return (f'<img src="{src}" alt="Email signature" '
-            f'style="max-width:540px;height:auto;border:0;display:block;">')
+# The sender's uploaded signature image is embedded inline (via CID) at send time
+# by routes/templates.py + utils/email_sender.py — no HTML/URL is built here.
 
 
 def _token_values(lead: Lead, sender: User | None) -> dict[str, str]:

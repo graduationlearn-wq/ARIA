@@ -101,6 +101,7 @@ def approval_stats(
     pending = base_q().filter(Interaction.send_status == "pending_approval").count()
     rejected = base_q().filter(Interaction.send_status == "rejected").count()
     sent_total = base_q().filter(Interaction.send_status == "sent").count()
+    failed = base_q().filter(Interaction.send_status == "failed").count()
     approved_today = (
         base_q().filter(
             Interaction.send_status == "sent",
@@ -109,11 +110,11 @@ def approval_stats(
         ).count()
     )
 
-    # Recent review activity (last 10 sent/rejected outbound messages)
+    # Recent review activity (last 10 sent / rejected / failed outbound messages)
     recent = (
         base_q()
         .filter(
-            or_(Interaction.send_status == "sent", Interaction.send_status == "rejected"),
+            Interaction.send_status.in_(["sent", "rejected", "failed"]),
         )
         .order_by(Interaction.timestamp.desc())
         .limit(10)
@@ -123,7 +124,9 @@ def approval_stats(
     activity = []
     for i in recent:
         lead = db.query(Lead).filter(Lead.id == i.lead_id).first()
-        if i.send_status == "rejected":
+        if i.send_status == "failed":
+            action, tone = "Send failed", "red"
+        elif i.send_status == "rejected":
             action, tone = "Rejected", "red"
         elif i.handled_by == "human_edited":
             action, tone = "Edited", "purple"
@@ -146,6 +149,7 @@ def approval_stats(
             "approved_today": approved_today,
             "rejected": rejected,
             "sent_total": sent_total,
+            "failed": failed,
         },
         "activity": activity,
     }

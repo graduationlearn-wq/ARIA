@@ -10,9 +10,9 @@ function avatar(seed, style = 'notionists') {
 }
 
 const ME = {
-  name:   'Arnav',
-  email:  'arnavkumar9372@gmail.com',
-  avatar: avatar('Arnav', 'avataaars'),
+  name:   'Demo User',
+  email:  'demo@beyondsure.in',
+  avatar: avatar('Demo User', 'avataaars'),
 };
 
 const LEADS = [

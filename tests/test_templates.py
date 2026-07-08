@@ -104,9 +104,9 @@ class TestSignatureOnSend:
         with patch("routes.templates.send_email", return_value=True) as mock_send:
             client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
         _, kwargs = mock_send.call_args
-        assert kwargs["signature_html"] is not None
-        assert "<img" in kwargs["signature_html"]
-        assert "u5.png" in kwargs["signature_html"]
+        # The uploaded signature is passed as a file path (embedded inline via CID).
+        assert kwargs["signature_image_path"] is not None
+        assert kwargs["signature_image_path"].endswith("u5.png")
 
     def test_send_omits_signature_when_unset(self, client, db):
         # conftest admin has no signature_image.
@@ -115,7 +115,7 @@ class TestSignatureOnSend:
         with patch("routes.templates.send_email", return_value=True) as mock_send:
             client.post(f"/templates/{tpl['id']}/send", json={"lead_id": lead.id})
         _, kwargs = mock_send.call_args
-        assert kwargs["signature_html"] is None
+        assert kwargs["signature_image_path"] is None
 
     def test_preview_reports_signature_status(self, client, db):
         lead = make_lead(db)

@@ -19,6 +19,7 @@ import re
 import html as _html
 import smtplib
 from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
@@ -26,6 +27,15 @@ from config import settings
 # Uploaded attachment files are stored as "t{template_id}__{original_name}" —
 # strip that prefix so the recipient sees the clean original filename.
 _UPLOAD_PREFIX = re.compile(r"^t\d+__")
+
+# Content-ID for the sender's inline signature image (referenced as cid:… in HTML).
+_SIG_CID = "aria-signature"
+
+
+def _image_subtype(path: str) -> str:
+    """MIME image subtype from a file extension (jpg → jpeg)."""
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    return {"jpg": "jpeg"}.get(ext, ext) or "png"
 
 
 # Markdown-style link:  [visible text](https://url)
@@ -62,7 +72,7 @@ def send_email(to_address: str, subject: str, body: str,
                from_email: str | None = None,
                from_name: str | None = None,
                reply_to: str | None = None,
-               signature_html: str | None = None) -> bool:
+               signature_image_path: str | None = None) -> bool:
     """
     Send a plain-text + HTML email, optionally with file attachments
     (list of paths on disk). Returns True on success, False on failure.
@@ -71,6 +81,11 @@ def send_email(to_address: str, subject: str, body: str,
     team member (so leads see who's actually writing). reply_to routes replies
     back to that person. The SMTP envelope sender stays the authenticated account
     (SPF/auth stay valid) — only the visible From/Reply-To change.
+
+    signature_image_path, if given and readable, is embedded **inline via CID**
+    (Content-ID) — the image travels inside the email, so it renders in every mail
+    client with no dependency on a public URL. Ported code only needs the file on
+    disk; no public route or absolute BASE_URL is required.
     """
     if not settings.smtp_user or not settings.smtp_password:
         print("[Email] SMTP credentials not configured — skipping send.")
@@ -90,20 +105,27 @@ def send_email(to_address: str, subject: str, body: str,
     display_name = (from_name or "").strip() or settings.email_from_name
     reply_addr = (reply_to or from_email or "").strip()
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"{display_name} <{visible_from}>"
-    msg["To"] = to_address
-    if reply_addr:
-        msg["Reply-To"] = reply_addr
+    # Load the inline signature image (embedded via CID; no public URL needed).
+    sig_part = None
+    if signature_image_path and os.path.isfile(signature_image_path):
+        try:
+            with open(signature_image_path, "rb") as f:
+                sig_part = MIMEImage(f.read(), _subtype=_image_subtype(signature_image_path))
+            sig_part.add_header("Content-ID", f"<{_SIG_CID}>")
+            sig_part.add_header("Content-Disposition", "inline", filename="signature")
+        except OSError as e:
+            print(f"[Email] Skipping unreadable signature image {signature_image_path}: {e}")
+            sig_part = None
 
-    # Plain text version — markdown links become "text: url" so they stay usable
-    msg.attach(MIMEText(_links_to_plain(body), "plain"))
-
-    # HTML version — markdown links become hidden hyperlinks (raw URL not shown)
+    # text/html alternative
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(_links_to_plain(body), "plain"))
     html_body = _links_to_html(body)
-    # The sender's uploaded signature image is appended as raw HTML (not escaped).
-    sig_block = f"<br><br>{signature_html}" if signature_html else ""
+    sig_block = (
+        f'<br><br><img src="cid:{_SIG_CID}" alt="Signature" '
+        f'style="max-width:540px;height:auto;border:0;display:block;">'
+        if sig_part is not None else ""
+    )
     html = f"""
     <html><body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #2c3e50;">
         {html_body}
@@ -115,16 +137,20 @@ def send_email(to_address: str, subject: str, body: str,
         </p>
     </body></html>
     """
-    msg.attach(MIMEText(html, "html"))
+    alt.attach(MIMEText(html, "html"))
 
-    # With attachments: wrap text/html alternative inside a mixed container.
+    # Nest containers only as needed:
+    #   alt  →  related (alt + inline signature)  →  mixed (root + file attachments)
+    root = alt
+    if sig_part is not None:
+        related = MIMEMultipart("related")
+        related.attach(alt)
+        related.attach(sig_part)
+        root = related
+
     if attachments:
-        outer = MIMEMultipart("mixed")
-        for header in ("Subject", "From", "To", "Reply-To"):
-            if header in msg:
-                outer[header] = msg[header]
-                del msg[header]
-        outer.attach(msg)
+        mixed = MIMEMultipart("mixed")
+        mixed.attach(root)
         for path in attachments:
             try:
                 with open(path, "rb") as f:
@@ -134,8 +160,15 @@ def send_email(to_address: str, subject: str, body: str,
                 continue
             clean_name = _UPLOAD_PREFIX.sub("", os.path.basename(path))
             part.add_header("Content-Disposition", "attachment", filename=clean_name)
-            outer.attach(part)
-        msg = outer
+            mixed.attach(part)
+        root = mixed
+
+    # Headers go on the outermost container.
+    root["Subject"] = subject
+    root["From"] = f"{display_name} <{visible_from}>"
+    root["To"] = to_address
+    if reply_addr:
+        root["Reply-To"] = reply_addr
 
     try:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
@@ -144,7 +177,7 @@ def send_email(to_address: str, subject: str, body: str,
             server.login(settings.smtp_user, settings.smtp_password)
             # Envelope sender stays the authenticated account (not the visible From) —
             # critical for SendGrid (smtp_user="apikey") and keeps SPF/auth aligned.
-            server.sendmail(auth_from, to_address, msg.as_string())
+            server.sendmail(auth_from, to_address, root.as_string())
         print(f"[Email] Sent to {to_address} — Subject: {subject}")
         return True
     except Exception as e:

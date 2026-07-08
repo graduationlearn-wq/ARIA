@@ -193,6 +193,22 @@ class TestApprovalStats:
         assert data["stats"]["sent_total"] >= 1
         assert any(a["action"] == "Approved" for a in data["activity"])
 
+    def test_failed_send_surfaces_in_stats(self, client, db):
+        # A send recorded as failed must be visible (count + activity), not silent.
+        from models.interaction import Interaction
+        from models.lead import Lead
+        lead = Lead(first_name="Failed", email="fail@x.in", status="new")
+        db.add(lead); db.commit(); db.refresh(lead)
+        db.add(Interaction(
+            lead_id=lead.id, direction="outbound", channel="email",
+            message_text="hi", message_type="template",
+            handled_by="human", send_status="failed",
+        ))
+        db.commit()
+        data = client.get("/approval/stats").json()
+        assert data["stats"]["failed"] >= 1
+        assert any(a["action"] == "Send failed" for a in data["activity"])
+
 
 # ── /approval/{id}/approve ────────────────────────────────────────────────────
 

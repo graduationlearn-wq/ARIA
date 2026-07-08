@@ -74,3 +74,47 @@ class TestSignatureUpload:
         app.dependency_overrides.pop(get_current_user, None)
         r = client.post("/signatures/me", files=png_upload())
         assert r.status_code == 401
+
+
+# ── Inline (CID) embedding of the signature in the actual email ───────────────
+
+class _FakeSMTP:
+    captured = {}
+
+    def __init__(self, *a, **k): pass
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def ehlo(self): pass
+    def starttls(self): pass
+    def login(self, *a): pass
+    def sendmail(self, frm, to, msg): _FakeSMTP.captured["msg"] = msg
+
+
+def _with_smtp(monkeypatch, tmp_path):
+    from utils import email_sender
+    monkeypatch.setattr(email_sender.settings, "smtp_user", "u@x.in")
+    monkeypatch.setattr(email_sender.settings, "smtp_password", "pw")
+    monkeypatch.setattr(email_sender.settings, "email_from_address", "from@x.in")
+    monkeypatch.setattr(email_sender.smtplib, "SMTP", _FakeSMTP)
+    return email_sender
+
+
+def test_signature_embedded_inline_via_cid(tmp_path, monkeypatch):
+    es = _with_smtp(monkeypatch, tmp_path)
+    img = tmp_path / "sig.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 40)
+
+    ok = es.send_email("lead@x.in", "Sub", "Hello", signature_image_path=str(img))
+    assert ok is True
+    raw = _FakeSMTP.captured["msg"]
+    assert "multipart/related" in raw               # image nested with the HTML
+    assert "Content-ID: <aria-signature>" in raw    # the inline image part
+    assert "cid:aria-signature" in raw              # referenced from the HTML body
+
+
+def test_no_cid_when_signature_file_missing(tmp_path, monkeypatch):
+    es = _with_smtp(monkeypatch, tmp_path)
+    ok = es.send_email("lead@x.in", "Sub", "Hello",
+                       signature_image_path=str(tmp_path / "does_not_exist.png"))
+    assert ok is True
+    assert "cid:aria-signature" not in _FakeSMTP.captured["msg"]

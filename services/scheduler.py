@@ -93,6 +93,10 @@ def _queue_or_send(lead: Lead, message_text: str, message_type: str,
             if sent:
                 interaction.send_status = "sent"
                 lead.last_interaction_at = datetime.now(timezone.utc)
+            else:
+                # A genuine in-window send failure — record it so it's visible in
+                # the approval stats rather than silently stuck as "approved".
+                interaction.send_status = "failed"
         else:
             # Outside 9am–9pm IST — stays "approved", sent on the next in-window run
             print(
@@ -391,6 +395,9 @@ def run_pending_approved_sends() -> dict:
                 sent_count += 1
                 print(f"[Scheduler] Pending send delivered → Lead {lead.id} ({lead.first_name})")
             else:
+                # In-window retry failed → mark "failed" so it surfaces instead of
+                # silently looping as "approved" every hour.
+                interaction.send_status = "failed"
                 failed_count += 1
 
         db.commit()
